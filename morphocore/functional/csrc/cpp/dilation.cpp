@@ -2,9 +2,12 @@
 #include <torch/extension.h>
 #include <c10/cuda/CUDAStream.h>
 #include <omp.h>
-#include "utils.cuh"
-#include "layer_cache.cuh"
 
+#include "cpp/dilation.hxx"
+
+#ifdef WITH_CUDA
+#include "cuda/dilation.cuh"
+#endif
 
 
 
@@ -26,7 +29,7 @@ torch::Tensor MorphoDilation::forward(
     torch::Tensor output;
     torch::Tensor max_index;
     
-    if (is_cuda(input)) {
+    if (input.is_cuda()) {
         #ifdef WITH_CUDA
         auto batch_size = input_shape[0];
         auto channels = input_shape[1]; // Should be 1 because only one channel for the moment !!! TODO
@@ -55,47 +58,19 @@ torch::Tensor MorphoDilation::forward(
         
         int shared_memory_size = sizeof(float) * kernel_width * kernel_height;
         
-        // Launch specialized kernels for know often used kernels
-        if (kernel_height == 30 && kernel_width == 30) {
-            morpho_dilation_forward_specialized_kernel<float, 30, 30><<<blocks, threads, shared_memory_size>>>(
-                padded_input.data_ptr<float>(),
-                weight.data_ptr<float>(),
-                output.data_ptr<float>(),
-                max_index.data_ptr<int64_t>(),
-                batch_size,
-                channels,
-                height,
-                width
-            );
+        #define X(TYPE, H, W) \
+        if constexpr (std::is_same_v<T, TYPE>) { \
+            if (kernel_h == H && kernel_w == W) { \
+                return morpho_dilaton_forward<TYPE, H, W>(
+                    
+                ); \
+            } \
         }
-        else if (kernel_height == 5 && kernel_width == 5)
+        MORPHO_SPECIALIZATION_LIST
+        #undef X
+        else
         {
-            morpho_dilation_forward_specialized_kernel<float, 5, 5><<<blocks, threads, shared_memory_size>>>(
-                padded_input.data_ptr<float>(),
-                weight.data_ptr<float>(),
-                output.data_ptr<float>(),
-                max_index.data_ptr<int64_t>(),
-                batch_size,
-                channels,
-                height,
-                width
-            );
-        }
-         else {
-            morpho_dilation_forward_kernel<float><<<blocks, threads, shared_memory_size>>>(
-                padded_input.data_ptr<float>(),
-                weight.data_ptr<float>(),
-                output.data_ptr<float>(),
-                max_index.data_ptr<int64_t>(),
-                batch_size,
-                channels,
-                height,
-                width,
-                padded_input.size(2), 
-                padded_input.size(3),
-                kernel_height_half,
-                kernel_width_half
-            );
+            
         }
         
         cudaError_t err = cudaGetLastError();
@@ -129,7 +104,7 @@ torch::autograd::tensor_list MorphoDilation::backward(
     torch::Tensor grad_input;
     torch::Tensor grad_weight;
     
-    if (is_cuda(input)) {
+    if (input.is_cuda()) {
         #ifdef WITH_CUDA
         auto input_shape = input.sizes();
         auto weight_shape = weight.sizes();
@@ -153,19 +128,7 @@ torch::autograd::tensor_list MorphoDilation::backward(
 
         int shared_mem_size = kernel_height * kernel_width * sizeof(float);
 
-        if (kernel_height == 30 && kernel_width == 30) {
-            morpho_dilation_backward_specialized_kernel<float, 30, 30><<<blocks, threads, shared_mem_size>>>(
-                grad_input.data_ptr<float>(),
-                grad_weight.data_ptr<float>(),
-                grad_output.data_ptr<float>(),
-                max_index.data_ptr<int64_t>(),
-                batch_size,
-                channels,
-                height,
-                width
-            );
-        }
-        else if(kernel_height == 5 && kernel_width == 5)
+        if(kernel_height == 5 && kernel_width == 5)
         {
             morpho_dilation_backward_specialized_kernel<float, 5, 5><<<blocks, threads, shared_mem_size>>>(
                 grad_input.data_ptr<float>(),
@@ -194,24 +157,7 @@ torch::autograd::tensor_list MorphoDilation::backward(
                 kernel_height_half,
                 kernel_width_half);
         }
-            
-        // Launch kernel based on scalar type
-        // AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_dilation_backward_cuda", ([&] {
-        //     morpho_dilation_backward_kernel<scalar_t><<<blocks, threads, shared_mem_size>>>(
-        //         grad_input.data_ptr<scalar_t>(),
-        //         grad_weight.data_ptr<scalar_t>(),
-        //         grad_output.data_ptr<scalar_t>(),
-        //         max_index.data_ptr<int64_t>(),
-        //         batch_size,
-        //         channels,
-        //         height,
-        //         width,
-        //         kernel_height,
-        //         kernel_width,
-        //         kernel_height_half,
-        //         kernel_width_half
-        //     );
-        // }));
+        
 
 
 
@@ -235,10 +181,6 @@ torch::autograd::tensor_list MorphoDilation::backward(
     }
     return {grad_input, grad_weight};
 }
-
-
-//CPU DON'T CARE FOR NOW (Just trying)
-
 
 
 torch::Tensor morpho_dilaton_forward_cpu(torch::Tensor input, torch::Tensor weight) {
@@ -267,10 +209,15 @@ torch::Tensor morpho_dilaton_forward_cpu(torch::Tensor input, torch::Tensor weig
     
     #pragma omp parallel for
     for (int64_t b = 0; b < batch_size; b++) {
+
+
         for (int64_t h = 0; h < height; h++) {
             for (int64_t w = 0; w < width; w++) {
+
                 float max_value = -std::numeric_limits<float>::infinity();
                 int64_t max_flat_index = 0;
+
+
                 for (int64_t kh = 0; kh < kernel_height; kh++) {
                     for (int64_t kw = 0; kw < kernel_width; kw++) {
                         int64_t ph = h + kh;
@@ -285,6 +232,7 @@ torch::Tensor morpho_dilaton_forward_cpu(torch::Tensor input, torch::Tensor weig
                     }
                 }
                 max_index.index_put_({b, 0, h, w}, max_flat_index);
+
                 output.index_put_({b, 0, h, w}, max_value);
             }
         }

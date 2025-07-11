@@ -1,5 +1,16 @@
-#include "dilation.cuh"
+#include "cuda/dilation.cuh"
 #define COARSING_LEVEL 2
+#ifndef MORPHO_SPECIALIZATION_LIST
+#define MORPHO_SPECIALIZATION_LIST \
+    X(float, 3, 3) \
+    X(float, 5, 5) \
+    X(float, 7, 7) \
+    X(double, 3, 3) \
+    X(double, 5, 5) \
+    X(double, 7, 7)
+#endif
+
+
 
 
 
@@ -331,118 +342,15 @@ __global__ void morpho_dilation_backward_kernel(
 }
 
 
-
-template __global__ void morpho_dilation_forward_kernel<float>(const float* input,
-    const float* weight,
-    float* output,
-    int64_t* max_indexes,
-    int batch_size,
-    int channels,
-    int height,
-    int width,
-    int padded_height,
-    int padded_width,
-    int kernel_height,
-    int kernel_width);
-
-template __global__ void morpho_dilation_forward_kernel<double>(const double* input,
-    const double* weight,
-    double* output,
-    int64_t* max_indexes,
-    int batch_size,
-    int channels,
-    int height,
-    int width,
-    int padded_height,
-    int padded_width,
-    int kernel_height,
-    int kernel_width);
-
-template __global__ void morpho_dilation_backward_kernel<float>(float* grad_input,
-    float* grad_weight,
-    const float* grad_output,
-    const int64_t* max_indexes,
-    int batch_size,
-    int channels,
-    int height,
-    int width,
-    int kernel_height,
-    int kernel_width,
-    int kernel_height_half,
-    int kernel_width_half);
-
-template __global__ void morpho_dilation_backward_kernel<double>(double* grad_input,
-    double* grad_weight,
-    const double* grad_output,
-    const int64_t* max_indexes,
-    int batch_size,
-    int channels,
-    int height,
-    int width,
-    int kernel_height,
-    int kernel_width,
-    int kernel_height_half,
-    int kernel_width_half);
+// Create a macro to make the initialization of each kernels easier.
+#define INSTANTIATE_MORPHO_SPECIALIZED(T, H, W) \
+    template __global__ void morpho_dilation_forward_specialized_kernel<T, H, W>( \
+        const T*, const T*, T*, int64_t*, int, int, int, int); \
+    template __global__ void morpho_dilation_backward_specialized_kernel<T, H, W>( \
+        T*, T*, const T*, const int64_t*, int, int, int, int);
 
 
-
-template __global__ void morpho_dilation_forward_specialized_kernel<float,5,5>(
-    const float* padded_input,  
-    const float* weight,
-    float* output, 
-    int64_t* max_indexes,
-    int batch_size,
-    int channels,
-    int height,
-    int width);
-
-template __global__ void morpho_dilation_forward_specialized_kernel<float,3,3>(
-    const float* padded_input,  
-    const float* weight,
-    float* output, 
-    int64_t* max_indexes,
-    int batch_size,
-    int channels,
-    int height,
-    int width);
-
-
-template __global__ void morpho_dilation_forward_specialized_kernel<double,5,5>(
-    const double* padded_input,  
-    const double* weight,
-    double* output, 
-    int64_t* max_indexes,
-    int batch_size,
-    int channels,
-    int height,
-    int width);
-
-template __global__ void morpho_dilation_backward_specialized_kernel<float, 5, 5>(
-    float* grad_input,
-    float* grad_weight,
-    const float* grad_output,
-    const int64_t* max_indexes,
-    int batch_size,
-    int channels,
-    int height,
-    int width);
-
-template __global__ void morpho_dilation_backward_specialized_kernel<float, 3, 3>(
-    float* grad_input,
-    float* grad_weight,
-    const float* grad_output,
-    const int64_t* max_indexes,
-    int batch_size,
-    int channels,
-    int height,
-    int width);
-
-template __global__ void morpho_dilation_backward_specialized_kernel<double, 5, 5>(
-    double* grad_input,
-    double* grad_weight,
-    const double* grad_output,
-    const int64_t* max_indexes,
-    int batch_size,
-    int channels,
-    int height,
-    int width);
+// Initialize all of the kernels to make them go faster.
+#define X(T, H, W) INSTANTIATE_MORPHO_SPECIALIZED(T, H, W)
+MORPHO_SPECIALIZATION_LIST
+#undef X

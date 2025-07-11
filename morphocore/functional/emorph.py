@@ -5,7 +5,7 @@ from modules.morpho_erosion_cpp import MorphoErosion
 from functional import dilation
 from functional import erosion
 
-def emorph(x, w, alpha):
+def emorph(x, w1, w2, alpha):
     """
     Exact morphological function
 
@@ -27,6 +27,6 @@ def emorph(x, w, alpha):
         alpha (torch.Tensor): control parameter
     """
     soft = F.sigmoid(alpha)
-    out_erosion = erosion(x, w)
-    out_dilation = dilation(x, w)
+    out_erosion = erosion(x, w1)
+    out_dilation = dilation(x, w2)
     return out_erosion * (1.0 - soft) + out_dilation * soft
