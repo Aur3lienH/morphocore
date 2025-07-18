@@ -1,9 +1,7 @@
 from torch import nn
 from torch.functional import F
-from modules.morpho_dilation_cpp import MorphoDilation
-from modules.morpho_erosion_cpp import MorphoErosion
-from functional import dilation
-from functional import erosion
+from morphocore.functional import dilation
+from morphocore.functional import erosion
 
 def emorph(x, w1, w2, alpha):
     """

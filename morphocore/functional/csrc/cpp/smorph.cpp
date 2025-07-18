@@ -1,10 +1,10 @@
-#include "smorph.cuh"
+#include "smorph.hpp"
 #include <torch/torch.h>
 
-#include "cpp/smorph.hxx"
-
 #ifdef WITH_CUDA
-#include "cuda/smorph.cuh"
+#include "../cuda/smorph.cuh"
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
 #endif
 
 
@@ -17,14 +17,14 @@ torch::Tensor Smorph::forward(
 {
     auto input_shape = input.sizes();
     auto weight_shape = weight.sizes();
-    TORCH_CHECK(input.dim() == 4, "Input must be a 4d tensor (batch_size, in_channels, height, width)");
-    TORCH_CHECK(weight.dim() == 4, "Weight must be a 4d tensor (out_channels, in_channels, kernel_height, kernel_width)");
-    TORCH_CHECK(input_shape[1] == weight_shape[1], "Input channels must match weight input channels");
-    TORCH_CHECK(input.sizes()[1] == 1, "Input Channels different to 1 not yet implemented!");
+    // TORCH_CHECK(input.dim() == 4, "Input must be a 4d tensor (batch_size, in_channels, height, width)");
+    // TORCH_CHECK(weight.dim() == 4, "Weight must be a 4d tensor (out_channels, in_channels, kernel_height, kernel_width)");
+    // TORCH_CHECK(input_shape[1] == weight_shape[1], "Input channels must match weight input channels");
+    // TORCH_CHECK(input.sizes()[1] == 1, "Input Channels different to 1 not yet implemented!");
 
-    if(is_cuda(input))
+    if(input.is_cuda())
     {
-        #ifdef WITH_CUDA
+        #ifdef WITH_CUDAS
         auto batch_size = input_shape[0];
         auto channels = input_shape[1]; 
         auto height = input_shape[2];
@@ -76,7 +76,7 @@ torch::autograd::tensor_list Smorph::backward(
     torch::autograd::AutogradContext* ctx,
     torch::autograd::tensor_list grad_outputs
 ) {
-    if(is_cuda(grad_outputs[0]))
+    if(grad_outputs[0].is_cuda())
     {
         #ifdef WITH_CUDA
         auto saved = ctx->get_saved_variables();
@@ -90,7 +90,7 @@ torch::autograd::tensor_list Smorph::backward(
         auto input_shape = input.sizes();
         auto weight_shape = weight.sizes();
         auto batch_size = input_shape[0];
-        auto channels = input_shape[1]; // Should be 1
+        auto channels = input_shape[1];
         auto height = input_shape[2];
         auto width = input_shape[3];
         auto kernel_height = weight_shape[2];
@@ -109,36 +109,36 @@ torch::autograd::tensor_list Smorph::backward(
         dim3 blocks((width + threads.x - 1) / threads.x,
                    (height + threads.y - 1) / threads.y,
                     batch_size);
-        cudaFuncSetAttribute(morpho_smorph_backward_kernel<float>, 
-                        cudaFuncAttributePreferredSharedMemoryCarveout, 
-                        cudaSharedmemCarveoutMaxShared);
-        AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_backward_kernel", ([&] {
-            morpho_smorph_backward_kernel<scalar_t><<<blocks, threads, shared_memory_size>>>(
-                grad_outputs[0].data_ptr<scalar_t>(),
-                grad_input.data_ptr<scalar_t>(),
-                grad_weight.data_ptr<scalar_t>(),
-                grad_alpha.data_ptr<scalar_t>(),
-                alpha.data_ptr<scalar_t>(),
-                input.data_ptr<scalar_t>(),
-                weight.data_ptr<scalar_t>(),
-                output.data_ptr<scalar_t>(),
-                values.data_ptr<scalar_t>(),
-                probabilities.data_ptr<scalar_t>(),
-                batch_size,
-                channels,
-                height,
-                width,
-                kernel_height,
-                kernel_width,
-                kernel_height_half,
-                kernel_width_half
-            );
-        }));
+        // cudaFuncSetAttribute(morpho_smorph_backward_kernel<float>, 
+        //                 cudaFuncAttributePreferredSharedMemoryCarveout, 
+        //                 cudaSharedmemCarveoutMaxShared);
+        // AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_backward_kernel", ([&] {
+        //     morpho_smorph_backward_kernel<scalar_t><<<blocks, threads, shared_memory_size>>>(
+        //         grad_outputs[0].data_ptr<scalar_t>(),
+        //         grad_input.data_ptr<scalar_t>(),
+        //         grad_weight.data_ptr<scalar_t>(),
+        //         grad_alpha.data_ptr<scalar_t>(),
+        //         alpha.data_ptr<scalar_t>(),
+        //         input.data_ptr<scalar_t>(),
+        //         weight.data_ptr<scalar_t>(),
+        //         output.data_ptr<scalar_t>(),
+        //         values.data_ptr<scalar_t>(),
+        //         probabilities.data_ptr<scalar_t>(),
+        //         batch_size,
+        //         channels,
+        //         height,
+        //         width,
+        //         kernel_height,
+        //         kernel_width,
+        //         kernel_height_half,
+        //         kernel_width_half
+        //     );
+        // }));
 
-        cudaError_t err = cudaGetLastError();
-        if (err != cudaSuccess) {
-            AT_ERROR("CUDA kernel launch error: ", cudaGetErrorString(err));
-        }
+        // cudaError_t err = cudaGetLastError();
+        // if (err != cudaSuccess) {
+        //     AT_ERROR("CUDA kernel launch error: ", cudaGetErrorString(err));
+        // }
         cudaDeviceSynchronize();
         return {grad_input, grad_weight, grad_alpha};
         #endif

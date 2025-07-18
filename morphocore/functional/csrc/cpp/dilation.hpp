@@ -1,6 +1,10 @@
 #pragma once 
 #include <torch/torch.h>
 
+
+
+
+template 
 class MorphoDilation : public torch::autograd::Function<MorphoDilation> 
 {
 public:
@@ -16,10 +20,3 @@ public:
     );
 };
 
-torch::Tensor morpho_dilaton_forward_cpu(torch::Tensor input, torch::Tensor weight);
-
-torch::autograd::tensor_list morpho_dilaton_backward_cpu(
-    torch::Tensor input,
-    torch::Tensor weight,
-    torch::Tensor max_indexes,
-    torch::Tensor grad_output);

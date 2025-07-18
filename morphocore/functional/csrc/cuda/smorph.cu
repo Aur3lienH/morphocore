@@ -1,4 +1,4 @@
-#include "cuda/smorph.cuh"
+#include "smorph.cuh"
 
 template <typename scalar_t>
 __global__ void morpho_smorph_forward_kernel(

@@ -1,14 +1,15 @@
-#include "exact_erosion.cuh"
+#include "erosion.hpp"
 
 #include <torch/torch.h>
 #include <torch/extension.h>
-#include <c10/cuda/CUDAStream.h>
 #include <omp.h>
 
-#include "cpp/erosion.hxx"
+
 
 #ifdef WITH_CUDA
-#include "cuda/erosion.cuh"
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+#include "../cuda/erosion.cuh"
 #endif
 
 
@@ -32,8 +33,8 @@ torch::Tensor MorphoErosion::forward(
     torch::Tensor output;
     torch::Tensor min_index;
     
-    if (is_cuda(input)) {
-        #ifdef WITH_CUDA
+    if (input.is_cuda()) {
+        #ifdef WITH_CUDAS
         auto batch_size = input_shape[0];
         auto channels = input_shape[1]; // Should be 1 because only one channel for the moment !!! TODO
         auto height = input_shape[2];
@@ -113,7 +114,7 @@ torch::Tensor MorphoErosion::forward(
         #endif
     } else {
         // CPU implementation TODO !!!
-        output = morpho_dilaton_forward_cpu(input, weight);
+        //output = morpho_dilaton_forward_cpu(input, weight);
         min_index = torch::zeros({input_shape[0], weight_shape[0], input_shape[2], input_shape[3]}, 
                                input.options().dtype(torch::kLong));
     }
@@ -135,8 +136,8 @@ torch::autograd::tensor_list MorphoErosion::backward(
     torch::Tensor grad_input;
     torch::Tensor grad_weight;
     
-    if (is_cuda(input)) {
-        #ifdef WITH_CUDA
+    if (input.is_cuda()) {
+        #ifdef WITH_CUDAS
         auto input_shape = input.sizes();
         auto weight_shape = weight.sizes();
         auto batch_size = input_shape[0];
@@ -230,14 +231,14 @@ torch::autograd::tensor_list MorphoErosion::backward(
         #endif
     } else {
         // Use CPU implementation
-        auto result = morpho_dilaton_backward_cpu(
-            input, 
-            weight, 
-            min_index,
-            grad_output
-        );
-        grad_input = result[0];
-        grad_weight = result[1];
+        // auto result = morpho_dilaton_backward_cpu(
+        //     input, 
+        //     weight, 
+        //     min_index,
+        //     grad_output
+        // );
+        // grad_input = result[0];
+        // grad_weight = result[1];
     }
     return {grad_input, grad_weight};
 }

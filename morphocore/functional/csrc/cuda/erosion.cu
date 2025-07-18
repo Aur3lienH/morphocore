@@ -1,4 +1,4 @@
-#include "cuda/erosion.cuh"
+#include "erosion.cuh"
 #define COARSING_LEVEL 2
 
 

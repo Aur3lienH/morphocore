@@ -1,9 +1,6 @@
 #pragma once
 #include <torch/torch.h>
 
-#define TILE_WIDTH 32
-#define TILE_HEIGHT 8
-
 class Smorph : public torch::autograd::Function<Smorph> 
 {
 public:
