@@ -1,46 +1,75 @@
 #pragma once 
+#include <iostream>
+#include <limits>
+#include <torch/torch.h>
+#include "morpho_op_enum.hpp"
 
-
-
-enum class MORPHO_OPERATION {
-    DILATION,
-    EROSION
-};
+template<typename scalar_t, MORPHO_OPERATION Op>
+struct MorphoPolicyCPU;
 
 
 template<typename scalar_t>
-struct MorphoPolicyCPU<scalar_t, MorphoOp::EROSION> {
-    __forceinline__ static scalar_t initial_value() 
+struct MorphoPolicyCPU<scalar_t, MORPHO_OPERATION::EROSION> {
+    inline static scalar_t initial_value() 
     {
-        return std::numeric_limits<scalar_t>::max();
+        return 10000;
     }
     
-    __forceinline__ static scalar_t combine(scalar_t input, scalar_t weight) 
+    inline static scalar_t combine(scalar_t input, scalar_t weight) 
     {
         return input - weight;
     }
     
-    __forceinline__ static bool is_better(scalar_t new_val, scalar_t current_best) 
+    inline static bool is_better(scalar_t new_val, scalar_t current_best) 
     {
         return new_val < current_best;
     }
 
-    __forceinline__ static scalar_t padding_value() 
+    inline static scalar_t padding_value() 
     {
-        return -std::numeric_limits<scalar_t>::infinity();
+        return std::numeric_limits<scalar_t>::infinity();
     }
 
-    __forceinline__ static int weight_gradient_sign() 
+    inline static int weight_gradient_sign() 
+    {
+        return -1;  
+    }
+};
+
+
+template<typename scalar_t>
+struct MorphoPolicyCPU<scalar_t, MORPHO_OPERATION::DILATION> {
+    inline static scalar_t initial_value() 
+    {
+        return -1000;
+    }
+    
+    inline static scalar_t combine(scalar_t input, scalar_t weight) 
+    {
+        return input + weight;
+    }
+    
+    inline static bool is_better(scalar_t new_val, scalar_t current_best) 
+    {
+        return new_val > current_best;
+    }
+
+    inline static scalar_t padding_value() 
+    {
+        return -1000;
+    }
+
+    inline static int weight_gradient_sign() 
     {
         return 1;  
     }
 };
 
 template<MORPHO_OPERATION op, typename T>
-torch::Tensor morpho_dilaton_forward_cpu(torch::Tensor input, torch::Tensor weight);
+torch::Tensor morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight);
 
 template<MORPHO_OPERATION op, typename T>
-torch::autograd::tensor_list morpho_dilaton_backward_cpu(
+torch::autograd::tensor_list morpho_operation_backward_cpu(
     torch::Tensor input,
     torch::Tensor weight,
     torch::Tensor grad_output
@@ -48,7 +77,7 @@ torch::autograd::tensor_list morpho_dilaton_backward_cpu(
 
 
 template <MORPHO_OPERATION op>
-class MorphoOpertion : public torch::autograd::Function<MorphoDilation<op>> 
+class MorphoOperation : public torch::autograd::Function<MorphoOperation<op>> 
 {
 public:
     static torch::Tensor forward(
@@ -64,4 +93,5 @@ public:
 };
 
 
-#include "morpho_op.hxx"
+#include "morpho_op_cpu.hxx"
+#include "morpho_op_wrap.hxx"

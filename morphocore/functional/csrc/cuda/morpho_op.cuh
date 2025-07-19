@@ -1,29 +1,10 @@
 #pragma once 
 #include <torch/torch.h>
+#include "../cpp/morpho_op_enum.hpp"
 
 
-template<typename scalar_t, MORPHO_OPERATION Op>
-struct MorphoPolicy;
 
-template<typename scalar_t, MORPHO_OPERATION::DILATION> 
-{
-    __device__ __forceinline__ static scalar_t initial_value() 
-    {
-        return std::numeric_limits<scalar_t>::lowest();
-    }
-    
-    __device__ __forceinline__ static scalar_t combine(scalar_t input, scalar_t weight) 
-    {
-        return input + weight;
-    }
-    
-    __device__ __forceinline__ static bool is_better(scalar_t new_val, scalar_t current_best) 
-    {
-        return new_val > current_best;
-    }
-}
-
-template <MorphoOp Op, typename scalar_t>
+template <MORPHO_OPERATION Op, typename scalar_t>
 void morpho_forward_kernel(const scalar_t* input,
     const scalar_t* weight,
     scalar_t* output,
@@ -39,7 +20,7 @@ void morpho_forward_kernel(const scalar_t* input,
     int kernel_width);
 
 
-template <MorphoOp Op, typename scalar_t>
+template <MORPHO_OPERATION Op, typename scalar_t>
 void morpho_backward_kernel(const scalar_t* padded_input,
     const scalar_t* weight, 
     scalar_t* grad_input,

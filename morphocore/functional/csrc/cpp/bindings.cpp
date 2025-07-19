@@ -1,14 +1,19 @@
-#include "erosion.hpp"
-#include "dilation.hpp"
+#include "morpho_op.hpp"
 #include "smorph.hpp"
 #include <torch/torch.h>
 #include <torch/extension.h>
 
-torch::Tensor morpho_dilation(torch::Tensor input, torch::Tensor weight) {
+using MorphoDilation = MorphoOperation<MORPHO_OPERATION::DILATION>;
+using MorphoErosion = MorphoOperation<MORPHO_OPERATION::EROSION>;
+
+
+torch::Tensor morpho_dilation(torch::Tensor input, torch::Tensor weight) 
+{
     return MorphoDilation::apply(input, weight);
 }
 
-torch::Tensor morpho_erosion(torch::Tensor input, torch::Tensor weight) {
+torch::Tensor morpho_erosion(torch::Tensor input, torch::Tensor weight) 
+{
     return MorphoErosion::apply(input, weight);
 }
 

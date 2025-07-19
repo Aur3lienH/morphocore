@@ -3,10 +3,10 @@
 
 
 template<MORPHO_OPERATION op, typename T>
-torch::Tensor morpho_dilaton_forward_cpu(torch::Tensor input, torch::Tensor weight) 
+torch::Tensor morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight) 
 {
 
-    using Policy = MorphoPolicyCPU<scalar_t, Op>;
+    using Policy = MorphoPolicyCPU<T, op>;
 
 
     auto input_shape = input.sizes();
@@ -67,7 +67,6 @@ torch::Tensor morpho_dilaton_forward_cpu(torch::Tensor input, torch::Tensor weig
                             }
                         }
                         
-                        // FIXED: Use accessor for efficient assignment
                         output_accessor[b][o][h][w] += best_value;
                     }
                 }
@@ -82,7 +81,7 @@ torch::Tensor morpho_dilaton_forward_cpu(torch::Tensor input, torch::Tensor weig
 
 
 template<MORPHO_OPERATION op ,typename T>
-torch::autograd::tensor_list morpho_dilaton_backward_cpu(
+torch::autograd::tensor_list morpho_operation_backward_cpu(
     torch::Tensor input,
     torch::Tensor weight,
     torch::Tensor grad_output) {
@@ -106,7 +105,7 @@ torch::autograd::tensor_list morpho_dilaton_backward_cpu(
     auto padded_input = torch::constant_pad_nd(
         input, 
         torch::IntList{kernel_width_half, kernel_width_half, kernel_height_half, kernel_height_half}, 
-        -std::numeric_limits<T>::infinity()
+        MorphoPolicyCPU<T, op>::padding_value()
     );
     
     auto grad_input_accessor = grad_input.template accessor<T, 4>();
