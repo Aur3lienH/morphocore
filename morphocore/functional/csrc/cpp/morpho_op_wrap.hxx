@@ -1,9 +1,12 @@
 #pragma once
 #include "morpho_op.hpp"
 #include "../cuda/morpho_op.cuh"
-#include <cuda_runtime.h>
 #include <torch/torch.h>
 #include "reshaper.hpp"
+
+#if WITH_CUDA
+#include <cuda_runtime.h>
+#endif
 
 
 template<MORPHO_OPERATION Op>

@@ -28,7 +28,6 @@ torch::Tensor morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor we
         torch::IntList{kernel_width_half, kernel_width_half, kernel_height_half, kernel_height_half}, 
         Policy::padding_value()
     );
-    
     // Get tensor accessors for efficient access
     auto output_accessor = output.template accessor<T, 4>();
     auto padded_input_accessor = padded_input.template accessor<T, 4>();

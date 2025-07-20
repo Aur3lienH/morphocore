@@ -3,12 +3,28 @@ import numpy as np
 import morphocore.functional as F
 import pytest
 
-def correct_dilation(image, selem):
-    pad_h, pad_w = selem.shape[0]//2, selem.shape[1]//2
-    padded = np.pad(image, ((pad_h, pad_h), (pad_w, pad_w)), mode='constant', constant_values=-np.inf)
-
-    result = np.full_like(image, -np.inf)
+def correct_morphology(image, selem, operation='dilation'):
+    """
+    Generic morphological operation that supports both dilation and erosion.
     
+    Args:
+        image: Input image
+        selem: Structuring element
+        operation: 'dilation' or 'erosion'
+    """
+    pad_h, pad_w = selem.shape[0]//2, selem.shape[1]//2
+    
+    if operation == 'dilation':
+        padded = np.pad(image, ((pad_h, pad_h), (pad_w, pad_w)), mode='constant', constant_values=-np.inf)
+        result = np.full_like(image, -np.inf)
+        op_func = np.maximum
+    elif operation == 'erosion':
+        padded = np.pad(image, ((pad_h, pad_h), (pad_w, pad_w)), mode='constant', constant_values=np.inf)
+        result = np.full_like(image, np.inf)
+        op_func = np.minimum
+    else:
+        raise ValueError(f"Unknown operation: {operation}")
+
     for dy in range(selem.shape[0]):
         for dx in range(selem.shape[1]):
             selem_value = selem[dy, dx]
@@ -21,9 +37,12 @@ def correct_dilation(image, selem):
             
             shifted_region = padded[y_start:y_end, x_start:x_end]
             
-            candidate = shifted_region + selem_value
+            if operation == 'dilation':
+                candidate = shifted_region + selem_value
+            else:  # erosion
+                candidate = shifted_region - selem_value
             
-            result = np.maximum(result, candidate)
+            result = op_func(result, candidate)
     
     return result
 
@@ -36,48 +55,63 @@ def device(request):
     return request.param
 
 
-class TestDilation:
+# Operation parametrization fixture
+@pytest.fixture(params=['dilation', 'erosion'])
+def operation(request):
+    return request.param
 
-    def test_dilation_4d(self, device):
+
+class TestMorphologicalOperations:
+
+    def test_morphology_4d(self, device, operation):
         image_np = np.random.randn(64, 64)
     
         kernel = np.random.randn(3, 3)
-        scipy_res = correct_dilation(image_np, kernel)
+        scipy_res = correct_morphology(image_np, kernel, operation)
 
         image_torch = torch.from_numpy(image_np).float().unsqueeze(0).unsqueeze(0).to(device)
         selem_torch = torch.from_numpy(kernel.astype(np.float32)).unsqueeze(0).unsqueeze(0).to(device)
 
-        torch_res = F.dilation(image_torch, selem_torch).squeeze(0).squeeze(0).cpu()
+        if operation == 'dilation':
+            torch_res = F.dilation(image_torch, selem_torch).squeeze(0).squeeze(0).cpu()
+        else:
+            torch_res = F.erosion(image_torch, selem_torch).squeeze(0).squeeze(0).cpu()
 
         np.testing.assert_allclose(torch_res, scipy_res, rtol=1e-6, atol=1e-7)
 
-    def test_dilation_2d(self, device):
+    def test_morphology_2d(self, device, operation):
         image_np = np.random.randn(64, 64)
     
         kernel = np.random.randn(3, 3)
-        scipy_res = correct_dilation(image_np, kernel)
+        scipy_res = correct_morphology(image_np, kernel, operation)
 
         image_torch = torch.from_numpy(image_np).float().to(device)
         selem_torch = torch.from_numpy(kernel.astype(np.float32)).to(device)
 
-        torch_res = F.dilation(image_torch, selem_torch).cpu()
+        if operation == 'dilation':
+            torch_res = F.dilation(image_torch, selem_torch).cpu()
+        else:
+            torch_res = F.erosion(image_torch, selem_torch).cpu()
 
         np.testing.assert_allclose(torch_res, scipy_res, rtol=1e-6, atol=1e-7)
 
-    def test_dilation_weird_size(self, device):
+    def test_morphology_weird_size(self, device, operation):
         image_np = np.random.randn(13, 4)
     
         kernel = np.random.randn(4, 4)
-        scipy_res = correct_dilation(image_np, kernel)
+        scipy_res = correct_morphology(image_np, kernel, operation)
 
         image_torch = torch.from_numpy(image_np).float().to(device)
         selem_torch = torch.from_numpy(kernel.astype(np.float32)).to(device)
 
-        torch_res = F.dilation(image_torch, selem_torch).cpu()
+        if operation == 'dilation':
+            torch_res = F.dilation(image_torch, selem_torch).cpu()
+        else:
+            torch_res = F.erosion(image_torch, selem_torch).cpu()
 
         np.testing.assert_allclose(torch_res, scipy_res, rtol=1e-6, atol=1e-7)
 
-    def test_batch_dilation(self, device):
+    def test_batch_morphology(self, device, operation):
         batch_size = 2
         
         images = []
@@ -89,16 +123,19 @@ class TestDilation:
         
         kernel = np.random.randn(3, 3)
         
-        scipy_res = np.stack([correct_dilation(image_np[i], kernel) for i in range(batch_size)])
+        scipy_res = np.stack([correct_morphology(image_np[i], kernel, operation) for i in range(batch_size)])
         
         image_torch = torch.from_numpy(image_np).float().unsqueeze(1).to(device)
         selem_torch = torch.from_numpy(kernel.astype(np.float32)).unsqueeze(0).unsqueeze(0).to(device)
         
-        torch_res = F.dilation(image_torch, selem_torch).squeeze(1).cpu()
+        if operation == 'dilation':
+            torch_res = F.dilation(image_torch, selem_torch).squeeze(1).cpu()
+        else:
+            torch_res = F.erosion(image_torch, selem_torch).squeeze(1).cpu()
         
         np.testing.assert_allclose(torch_res, scipy_res, rtol=1e-6, atol=1e-7)
 
-    def test_one_channel_to_many(self, device):
+    def test_one_channel_to_many(self, device, operation):
         """Test applying multiple different kernels to a single-channel image to produce multiple outputs."""
         batch_size = 1
         num_output_channels = 3
@@ -117,7 +154,7 @@ class TestDilation:
         # Expected result: apply each kernel to the same input channel
         expected_channels = []
         for o in range(num_output_channels):
-            channel_result = correct_dilation(image_channel, kernels[o])
+            channel_result = correct_morphology(image_channel, kernels[o], operation)
             expected_channels.append(channel_result)
         scipy_res = np.stack(expected_channels)  # Shape: (3, 32, 32)
         
@@ -130,10 +167,13 @@ class TestDilation:
         for o in range(num_output_channels):
             weight_tensor[o, 0, :, :] = torch.from_numpy(kernels[o].astype(np.float32)).to(device)
         
-        # Apply dilation
-        torch_res = F.dilation(image_torch, weight_tensor).squeeze(0).cpu()
+        # Apply operation
+        if operation == 'dilation':
+            torch_res = F.dilation(image_torch, weight_tensor).squeeze(0).cpu()
+        else:
+            torch_res = F.erosion(image_torch, weight_tensor).squeeze(0).cpu()
         
-        print(f"Device: {device}")
+        print(f"Device: {device}, Operation: {operation}")
         print(f"Input shape: {image_torch.shape}")        # (1, 1, 32, 32)
         print(f"Weight shape: {weight_tensor.shape}")     # (3, 1, 3, 3)
         print(f"Output shape: {torch_res.shape}")         # (3, 32, 32)
@@ -141,7 +181,7 @@ class TestDilation:
         
         np.testing.assert_allclose(torch_res, scipy_res, rtol=1e-6, atol=1e-7)
 
-    def test_many_channel_to_one(self, device):
+    def test_many_channel_to_one(self, device, operation):
         """Test applying different structuring elements to different channels, producing single output via accumulation."""
         batch_size = 1
         num_channels = 3
@@ -160,14 +200,19 @@ class TestDilation:
             kernel = np.random.randn(kernel_size, kernel_size)
             kernels.append(kernel)
         
-        # ✅ CORRECTED: Expected result with ACCUMULATION (sum across channels)
+        # Expected result with accumulation
         channel_results = []
         for c in range(num_channels):
-            channel_result = correct_dilation(image_channels[c], kernels[c])
+            channel_result = correct_morphology(image_channels[c], kernels[c], operation)
             channel_results.append(channel_result)
         
-        # ✅ Sum across all channel results (matching C++ accumulation behavior)
-        scipy_res = np.sum(channel_results, axis=0)  # Shape: (H, W)
+        if operation == 'dilation':
+            # For dilation: sum across all channel results
+            scipy_res = np.sum(channel_results, axis=0)  # Shape: (H, W)
+        else:
+            # For erosion: you might want to use minimum across channels instead
+            # This depends on your specific requirements
+            scipy_res = np.sum(channel_results, axis=0)  # Or np.minimum.reduce(channel_results)
         
         # Torch tensors
         image_torch = torch.from_numpy(np.stack(image_channels)).float().unsqueeze(0).to(device)  # (1, 3, H, W)
@@ -177,18 +222,21 @@ class TestDilation:
         for c in range(num_channels):
             weight_tensor[0, c, :, :] = torch.from_numpy(kernels[c].astype(np.float32)).to(device)
         
-        print(f"Device: {device}")
+        print(f"Device: {device}, Operation: {operation}")
         print(f"Input shape: {image_torch.shape}")      # (1, 3, 32, 32)
         print(f"Weight shape: {weight_tensor.shape}")   # (1, 3, 3, 3)
         
-        torch_res = F.dilation(image_torch, weight_tensor).squeeze().cpu()
+        if operation == 'dilation':
+            torch_res = F.dilation(image_torch, weight_tensor).squeeze().cpu()
+        else:
+            torch_res = F.erosion(image_torch, weight_tensor).squeeze().cpu()
         
         print(f"Output shape: {torch_res.shape}")       # (32, 32)
         print(f"Expected shape: {scipy_res.shape}")     # (32, 32)
         
         np.testing.assert_allclose(torch_res, scipy_res, rtol=1e-6, atol=1e-7)
 
-    def test_many_channel_to_many(self, device):
+    def test_many_channel_to_many(self, device, operation):
         """Test applying different structuring elements, with each output getting contributions from ALL inputs."""
         batch_size = 1
         num_channels = 3
@@ -202,18 +250,18 @@ class TestDilation:
             image_channels.append(channel)
         
         # Create weight tensor: (3, 3, K, K) - 3 outputs, 3 inputs each
-        # Each output channel has different kernels for each input channel
         kernels = np.random.randn(num_channels, num_channels, kernel_size, kernel_size).astype(np.float32)
         
         # ✅ CORRECTED: Expected result with contributions from ALL input channels
+        # Keep the same implementation - SUM the contributions (like convolution)
         expected_channels = []
         for o in range(num_channels):  # For each output channel
             output_result = np.zeros((height, width))
             
             for i in range(num_channels):  # Accumulate from ALL input channels
                 # Apply weight[o][i] to input[i]
-                channel_contribution = correct_dilation(image_channels[i], kernels[o, i])
-                output_result += channel_contribution
+                channel_contribution = correct_morphology(image_channels[i], kernels[o, i], operation)
+                output_result += channel_contribution  # SUM (same for both dilation and erosion)
                 
             expected_channels.append(output_result)
         
@@ -223,12 +271,14 @@ class TestDilation:
         image_torch = torch.from_numpy(np.stack(image_channels)).float().unsqueeze(0).to(device)  # (1, 3, H, W)
         weight_tensor = torch.from_numpy(kernels).to(device)  # (3, 3, K, K)
         
-        print(f"Device: {device}")
+        print(f"Device: {device}, Operation: {operation}")
         print(f"Input shape: {image_torch.shape}")        # (1, 3, 32, 32)
         print(f"Weight shape: {weight_tensor.shape}")     # (3, 3, 3, 3)
-        print(f"Weight structure: FULL (each output from ALL inputs)")
         
-        torch_res = F.dilation(image_torch, weight_tensor).squeeze(0).cpu()  # (3, H, W)
+        if operation == 'dilation':
+            torch_res = F.dilation(image_torch, weight_tensor).squeeze(0).cpu()  # (3, H, W)
+        else:
+            torch_res = F.erosion(image_torch, weight_tensor).squeeze(0).cpu()
         
         print(f"Output shape: {torch_res.shape}")         # (3, 32, 32)
         print(f"Expected shape: {scipy_res.shape}")       # (3, 32, 32)
@@ -239,7 +289,7 @@ class TestDilation:
     @pytest.mark.parametrize("image_size", [32, 64, 128])
     @pytest.mark.parametrize("kernel_size", [3, 5, 7])
     @pytest.mark.parametrize("batch_size", [1, 2, 4, 8])
-    def test_benchmark(self, benchmark, device, image_size, kernel_size, batch_size):
+    def test_benchmark(self, benchmark, device, operation, image_size, kernel_size, batch_size):
         images = [np.random.randn(image_size, image_size) for _ in range(batch_size)]
         image_np = np.stack(images)
         
@@ -248,14 +298,17 @@ class TestDilation:
         image_torch = torch.from_numpy(image_np).float().unsqueeze(1).to(device)
         selem_torch = torch.from_numpy(kernel.astype(np.float32)).unsqueeze(0).unsqueeze(0).to(device)
         
-        result = benchmark(F.dilation, image_torch, selem_torch)
+        if operation == 'dilation':
+            result = benchmark(F.dilation, image_torch, selem_torch)
+        else:
+            result = benchmark(F.erosion, image_torch, selem_torch)
         
         assert result.shape == (batch_size, 1, image_size, image_size)
-        
 
-class TestDilationBackward:
+
+class TestMorphologyBackward:
     
-    def test_grad(self, device):
+    def test_grad(self, device, operation):
         input_test = torch.tensor([[[[1.0, 2.0, 3.0],
                            [4.0, 5.0, 6.0], 
                            [7.0, 8.0, 9.0]]]], dtype=torch.float32, requires_grad=True).to(device)
@@ -264,14 +317,19 @@ class TestDilationBackward:
                                 [0.4, 0.5, 0.6],
                                 [0.7, 0.8, 0.9]]]], dtype=torch.float32).to(device)
         
-        print(f"Device: {device}")
+        print(f"Device: {device}, Operation: {operation}")
         print("Input:")
         print(input_test.squeeze().cpu())
         print("Weight:")
         print(weight_test.squeeze().cpu())
         
+        if operation == 'dilation':
+            func = lambda x, w: F.dilation(x, w)
+        else:
+            func = lambda x, w: F.erosion(x, w)
+        
         result = torch.autograd.gradcheck(
-            lambda x, w: F.dilation(x, w),
+            func,
             (input_test, weight_test),
             eps=1e-4,           
             atol=1e-3,          
@@ -280,4 +338,18 @@ class TestDilationBackward:
             fast_mode=True    
         )
         
-        assert result, "Gradient check failed for morphological dilation"
+        assert result, f"Gradient check failed for morphological {operation}"
+
+
+# Separate test classes for individual operations (if needed)
+class TestDilation(TestMorphologicalOperations):
+    @pytest.fixture
+    def operation(self):
+        return 'dilation'
+
+
+class TestErosion(TestMorphologicalOperations):
+    @pytest.fixture
+    def operation(self):
+        return 'erosion'
+

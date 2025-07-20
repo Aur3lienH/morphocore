@@ -197,222 +197,149 @@ __global__ void morpho_operation_forward_specialized_kernel(
 
 
 template <MORPHO_OPERATION Op, typename scalar_t, int KH, int KW>
-__global__ void morpho_operation_backward_specialized_kernel(
+__global__ void morpho_operation_forward_kernel(
+    const scalar_t* padded_input,  
+    const scalar_t* weight,
+    scalar_t* output, 
+    int64_t* max_indexes,
+    int batch_size,
+    int in_channels,     
+    int out_channels,    
+    int height,
+    int width) {
+
+    const int b = blockIdx.z;
+    const int h = blockIdx.y * blockDim.y + threadIdx.y;
+    const int w = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (h >= height || w >= width || b >= batch_size) return;
+    
+    const int padded_height = height + (KH / 2) * 2;
+    const int padded_width = width + (KW / 2) * 2;
+    const int kernel_height_half = KH / 2;
+    const int kernel_width_half = KW / 2;
+
+    using Policy = MorphoPolicy<scalar_t, Op>;
+    
+    for (int o = 0; o < out_channels; o++) {
+        scalar_t output_value = 0; 
+        
+        for (int c = 0; c < in_channels; c++) {
+            scalar_t best_value = Policy::initial_value();
+            int max_flat_index = -1;
+            
+            // ✅ Simple nested loops without #pragma unroll to avoid complexity
+            for (int kh = 0; kh < KH; kh++) {
+                for (int kw = 0; kw < KW; kw++) {
+                    int padded_h = h - kh + 2 * kernel_height_half;
+                    int padded_w = w - kw + 2 * kernel_width_half;
+                    
+                    // ✅ Bounds checking
+                    if (padded_h >= 0 && padded_h < padded_height && 
+                        padded_w >= 0 && padded_w < padded_width) {
+                        
+                        scalar_t input_val = padded_input[
+                            b * in_channels * padded_height * padded_width + 
+                            c * padded_height * padded_width + 
+                            padded_h * padded_width + 
+                            padded_w];
+                        
+                        scalar_t weight_val = weight[
+                            o * in_channels * KH * KW + 
+                            c * KH * KW + 
+                            kh * KW + 
+                            kw];
+                        
+                        scalar_t val = Policy::combine(input_val, weight_val);
+                        
+                        if(Policy::is_better(val, best_value)) {
+                            best_value = val;
+                            max_flat_index = kh * KW + kw;
+                        }
+                    }
+                }
+            }
+            
+            output_value += best_value;
+            
+            // ✅ Store max index for this specific channel
+            int max_idx_index = b * out_channels * in_channels * height * width + 
+                               o * in_channels * height * width + 
+                               c * height * width + 
+                               h * width + 
+                               w;
+            max_indexes[max_idx_index] = max_flat_index;
+        }
+        
+        // ✅ Store final output
+        int out_idx = b * out_channels * height * width + o * height * width + h * width + w;
+        output[out_idx] = output_value;
+    }
+}
+
+
+
+template <MORPHO_OPERATION Op, typename scalar_t, int KH, int KW>
+__global__ void morpho_operation_backward_kernel(
     const scalar_t* padded_input,
     const scalar_t* weight,
     scalar_t* grad_input,
     scalar_t* grad_weight,
     const scalar_t* grad_output,
-    const int64_t* max_indexes,  // Shape: [batch_size, out_channels, in_channels, height, width]
+    const int64_t* max_indexes,
     int batch_size,
     int in_channels,
     int out_channels,
     int height,
     int width) {
 
-    extern __shared__ char shared_mem[];
-    using Policy = MorphoPolicy<scalar_t, Op>;
-
-    // Shared memory for weight gradient accumulation
-    scalar_t* shared_grad_weight = (scalar_t*)(shared_mem);
-    const int local_weight_size = out_channels * in_channels * KH * KW;
-    const int kernel_height_half = KH / 2;
-    const int kernel_width_half = KW / 2;
-    const int padded_height = height + (KH / 2) * 2;
-    const int padded_width = width + (KW / 2) * 2;
-
-    // Initialize shared memory
-    for (int i = threadIdx.y * blockDim.x + threadIdx.x; i < local_weight_size; i += blockDim.x * blockDim.y) {
-       shared_grad_weight[i] = 0;
-    }
-    __syncthreads();
-
     const int b = blockIdx.z;
     const int h = blockIdx.y * blockDim.y + threadIdx.y;
     const int w = blockIdx.x * blockDim.x + threadIdx.x;
-    int linear_tid = threadIdx.y * blockDim.x + threadIdx.x;
-    const int warp_id = linear_tid / 32;
-    int lane_id = linear_tid % 32;
-
-    // Local arrays for per-thread weight gradients
-    scalar_t local_weight_grad[KH * KW] = {0};
-
-    if (h < height && w < width && b < batch_size) {
+    
+    if (h >= height || w >= width || b >= batch_size) return;
+    
+    const int kernel_height_half = KH / 2;
+    const int kernel_width_half = KW / 2;
+    
+    for (int o = 0; o < out_channels; o++) {
+        const int out_idx = b * out_channels * height * width + o * height * width + h * width + w;
+        const scalar_t grad = grad_output[out_idx];
         
-        for (int o = 0; o < out_channels; o++) {
-            const int out_idx = b * out_channels * height * width + o * height * width + h * width + w;
-            const scalar_t grad = grad_output[out_idx];
+        for (int c = 0; c < in_channels; c++) {
+            // ✅ Get the winning index for this specific input channel
+            int max_idx_index = b * out_channels * in_channels * height * width + 
+                               o * in_channels * height * width + 
+                               c * height * width + 
+                               h * width + 
+                               w;
+            int best_flat_idx = max_indexes[max_idx_index];
             
-            for (int c = 0; c < in_channels; c++) {
+            if (best_flat_idx != -1) {
+                int best_kh = best_flat_idx / KW;
+                int best_kw = best_flat_idx % KW;
                 
-                // Clear local accumulator for this (o, c) pair
-                for (int i = 0; i < KH * KW; i++) local_weight_grad[i] = 0;
+                // ✅ Backpropagate to input
+                int in_h = h - best_kh + kernel_height_half;
+                int in_w = w - best_kw + kernel_width_half;
                 
-                // Get the winning index for THIS specific input channel
-                int max_idx_index = b * out_channels * in_channels * height * width + 
-                                   o * in_channels * height * width + 
-                                   c * height * width + 
-                                   h * width + 
-                                   w;
-                int best_flat_idx = max_indexes[max_idx_index];
-                
-                if (best_flat_idx != -1) {
-                    int best_kh = best_flat_idx / KW;
-                    int best_kw = best_flat_idx % KW;
-                    
-                    // Backpropagate to input for this channel
-                    int in_h = h - best_kh + kernel_height_half;
-                    int in_w = w - best_kw + kernel_width_half;
-                    
-                    // Clamp to valid input dimensions
-                    in_h = max(0, min(height - 1, in_h));
-                    in_w = max(0, min(width - 1, in_w));
-                    
-                    // Compute gradient direction based on operation type
+                // ✅ Bounds checking
+                if (in_h >= 0 && in_h < height && in_w >= 0 && in_w < width) {
                     scalar_t input_grad = (Op == MORPHO_OPERATION::EROSION) ? -grad : grad;
-                    
-                    // Accumulate gradient to input
                     atomicAdd(&grad_input[b * in_channels * height * width + 
                                         c * height * width + 
                                         in_h * width + 
                                         in_w], input_grad);
-                    
-                    // Accumulate weight gradient locally
-                    scalar_t weight_grad = (Op == MORPHO_OPERATION::EROSION) ? -grad : grad;
-                    local_weight_grad[best_flat_idx] += weight_grad;
                 }
                 
-                // Warp-level reduction for weight gradients
-                #pragma unroll
-                for (int k = 0; k < KH * KW; k++) {
-                    scalar_t warp_sum = local_weight_grad[k];
-                    
-                    // Warp shuffle reduction
-                    #pragma unroll
-                    for (int offset = 16; offset > 0; offset /= 2) {
-                        warp_sum += __shfl_down_sync(0xffffffff, warp_sum, offset);
-                    }
-                    
-                    // First lane of warp accumulates to shared memory
-                    if (lane_id == 0) {
-                        int global_weight_idx = o * in_channels * KH * KW + c * KH * KW + k;
-                        atomicAdd(&shared_grad_weight[global_weight_idx], warp_sum);
-                    }
-                }
-            }
-        }
-    }
-
-    __syncthreads();
-
-    // Write shared memory results to global memory
-    // Use first warp to do the global writes
-    if (warp_id == 0) {
-        for (int k = lane_id; k < local_weight_size; k += 32) {
-            const scalar_t val = shared_grad_weight[k];
-            if (val != scalar_t(0)) {
-                atomicAdd(&grad_weight[k], val);
+                // ✅ Backpropagate to weight - simple atomic without complex reductions
+                scalar_t weight_grad = (Op == MORPHO_OPERATION::EROSION) ? -grad : grad;
+                int weight_idx = o * in_channels * KH * KW + c * KH * KW + best_kh * KW + best_kw;
+                atomicAdd(&grad_weight[weight_idx], weight_grad);
             }
         }
     }
 }
-
-
-
-template <typename scalar_t>
-__global__ void morpho_dilation_backward_kernel(
-    scalar_t* grad_input,
-    scalar_t* grad_weight,
-    const scalar_t* grad_output,
-    const int64_t* max_indexes,
-    int batch_size,
-    int channels,
-    int height,
-    int width,
-    int kernel_height,
-    int kernel_width,
-    int kernel_height_half,
-    int kernel_width_half) {
-
-    extern __shared__ char shared_mem[];
-
-    scalar_t* shared_grad_weight = (scalar_t*)(shared_mem);
-
-    // Set the gradient to 0
-    for (int i = threadIdx.y * blockDim.x + threadIdx.x; i < kernel_height * kernel_width; i += blockDim.x * blockDim.y) 
-    {
-       shared_grad_weight[i] = 0;
-    }
-   __syncthreads(); 
-
-    const int b = blockIdx.z;
-    const int h = blockIdx.y * blockDim.y + threadIdx.y;
-    const int w = blockIdx.x * blockDim.x + threadIdx.x;
-    int linear_tid = threadIdx.y * blockDim.x + threadIdx.x;
-    int lane_id = linear_tid % 32;
-
-    scalar_t grad_val = 0;
-    int k_index = -1;
-    bool is_active = false;
-    
-    if (h < height && w < width && b < batch_size) {
-        const int c = 0;
-        
-        const int idx = b * channels * height * width + c * height * width + h * width + w;
-        const scalar_t grad = grad_output[idx];
-        const int max_flat_index = max_indexes[idx];
-
-        if (max_flat_index != -1)
-        {
-            const int kh = max_flat_index / kernel_width;
-            const int kw = max_flat_index % kernel_width;
-            
-            int in_h = h + kh - kernel_height_half;
-            int in_w = w + kw - kernel_width_half;
-            
-            in_h = max(0, min(height - 1, in_h));
-            in_w = max(0, min(width - 1, in_w));
-            
-            atomicAdd(&grad_input[b * channels * height * width + 
-                                c * height * width + 
-                                in_h * width + 
-                                in_w], grad * (1.0f / (kernel_height * kernel_width)));
-                            
-            grad_val = grad * (1.0f / (kernel_height * kernel_width));
-            k_index = kh * kernel_width + kw;
-            is_active = true;
-        }
-        
-        
-    }
-
-
-    // Accumulate in the first lane and than atomic add
-    for (int k = 0; k < kernel_height * kernel_width; k++) {
-        unsigned mask = __ballot_sync(0xffffffff, k_index == k);
-        
-        if (mask > 0) { 
-            scalar_t my_val = (k_index == k) ? grad_val : 0;
-            #pragma unroll
-            for (int offset = 16; offset > 0; offset /= 2) {
-                my_val += __shfl_down_sync(mask, my_val, offset);
-            }
-            if (k_index == k && lane_id == __ffs(mask) - 1) {
-                atomicAdd(&shared_grad_weight[k], my_val);
-            }
-        }
-    }
-
-    __syncthreads();
-
-    for (int i = threadIdx.y * blockDim.x + threadIdx.x; i < kernel_height * kernel_width; i += blockDim.x * blockDim.y) {
-       if (shared_grad_weight[i] != 0) {
-           atomicAdd(&grad_weight[i], shared_grad_weight[i]);
-       }
-   }
-    
-}
-
 
 template <MORPHO_OPERATION Op, typename scalar_t>
 void morpho_forward_kernel(const scalar_t* input,
@@ -436,53 +363,43 @@ void morpho_forward_kernel(const scalar_t* input,
         batch_size
     );
     
-    // ✅ Fixed: No shared memory for weights in multi-channel case
-    // (would be too large: out_channels * in_channels * kernel_height * kernel_width)
+    // ✅ FIX: Remove shared memory usage entirely for now
     size_t shared_memory_size = 0;
     
     if constexpr (std::is_same_v<scalar_t, float>) {
         if (kernel_height == 3 && kernel_width == 3) {
-            morpho_operation_forward_specialized_kernel<Op, float, 3, 3><<<blocks, threads, shared_memory_size>>>(
+            morpho_operation_forward_kernel<Op, float, 3, 3><<<blocks, threads, shared_memory_size>>>(
                 input, weight, output, max_indexes, batch_size, in_channels, out_channels, height, width);
             return;
         }
         else if (kernel_height == 5 && kernel_width == 5) {
-            morpho_operation_forward_specialized_kernel<Op, float, 5, 5><<<blocks, threads, shared_memory_size>>>(
+            morpho_operation_forward_kernel<Op, float, 5, 5><<<blocks, threads, shared_memory_size>>>(
                 input, weight, output, max_indexes, batch_size, in_channels, out_channels, height, width);
             return;
         }
         else if (kernel_height == 7 && kernel_width == 7) {
-            morpho_operation_forward_specialized_kernel<Op, float, 7, 7><<<blocks, threads, shared_memory_size>>>(
+            morpho_operation_forward_kernel<Op, float, 7, 7><<<blocks, threads, shared_memory_size>>>(
                 input, weight, output, max_indexes, batch_size, in_channels, out_channels, height, width);
             return;
         }
     }
     else if constexpr (std::is_same_v<scalar_t, double>) {
         if (kernel_height == 3 && kernel_width == 3) {
-            morpho_operation_forward_specialized_kernel<Op, double, 3, 3><<<blocks, threads, shared_memory_size>>>(
+            morpho_operation_forward_kernel<Op, double, 3, 3><<<blocks, threads, shared_memory_size>>>(
                 input, weight, output, max_indexes, batch_size, in_channels, out_channels, height, width);
             return;
         }
         else if (kernel_height == 5 && kernel_width == 5) {
-            morpho_operation_forward_specialized_kernel<Op, double, 5, 5><<<blocks, threads, shared_memory_size>>>(
+            morpho_operation_forward_kernel<Op, double, 5, 5><<<blocks, threads, shared_memory_size>>>(
                 input, weight, output, max_indexes, batch_size, in_channels, out_channels, height, width);
             return;
         }
         else if (kernel_height == 7 && kernel_width == 7) {
-            morpho_operation_forward_specialized_kernel<Op, double, 7, 7><<<blocks, threads, shared_memory_size>>>(
+            morpho_operation_forward_kernel<Op, double, 7, 7><<<blocks, threads, shared_memory_size>>>(
                 input, weight, output, max_indexes, batch_size, in_channels, out_channels, height, width);
             return;
         }
     }
-    
-    int kernel_height_half = kernel_height / 2;
-    int kernel_width_half = kernel_width / 2;
-    
-    size_t general_shared_memory_size = out_channels * in_channels * kernel_height * kernel_width * sizeof(scalar_t);
-    
-    // morpho_operation_general_kernel<Op, scalar_t><<<blocks, threads, general_shared_memory_size>>>(
-    //     input, weight, output, max_indexes, batch_size, in_channels, out_channels, height, width,
-    //     padded_height, padded_width, kernel_height, kernel_width, kernel_height_half, kernel_width_half);
 }
 
 
@@ -510,24 +427,24 @@ void morpho_backward_kernel(const scalar_t* padded_input,
         batch_size
     );
     
-    // ✅ Fixed: Shared memory for weight gradient accumulation
-    size_t shared_memory_size = out_channels * in_channels * kernel_height * kernel_width * sizeof(scalar_t);
+    // ✅ FIX: No shared memory to avoid complexity
+    size_t shared_memory_size = 0;
     
     if constexpr (std::is_same_v<scalar_t, float>) {
         if (kernel_height == 3 && kernel_width == 3) {
-            morpho_operation_backward_specialized_kernel<Op, float, 3, 3><<<blocks, threads, shared_memory_size>>>(
+            morpho_operation_backward_kernel<Op, float, 3, 3><<<blocks, threads, shared_memory_size>>>(
                 padded_input, weight, grad_input, grad_weight, grad_output, max_indexes, 
                 batch_size, in_channels, out_channels, height, width);
             return;
         }
         else if (kernel_height == 5 && kernel_width == 5) {
-            morpho_operation_backward_specialized_kernel<Op, float, 5, 5><<<blocks, threads, shared_memory_size>>>(
+            morpho_operation_backward_kernel<Op, float, 5, 5><<<blocks, threads, shared_memory_size>>>(
                 padded_input, weight, grad_input, grad_weight, grad_output, max_indexes, 
                 batch_size, in_channels, out_channels, height, width);
             return;
         }
         else if (kernel_height == 7 && kernel_width == 7) {
-            morpho_operation_backward_specialized_kernel<Op, float, 7, 7><<<blocks, threads, shared_memory_size>>>(
+            morpho_operation_backward_kernel<Op, float, 7, 7><<<blocks, threads, shared_memory_size>>>(
                 padded_input, weight, grad_input, grad_weight, grad_output, max_indexes, 
                 batch_size, in_channels, out_channels, height, width);
             return;
@@ -535,61 +452,50 @@ void morpho_backward_kernel(const scalar_t* padded_input,
     }
     else if constexpr (std::is_same_v<scalar_t, double>) {
         if (kernel_height == 3 && kernel_width == 3) {
-            morpho_operation_backward_specialized_kernel<Op, double, 3, 3><<<blocks, threads, shared_memory_size>>>(
+            morpho_operation_backward_kernel<Op, double, 3, 3><<<blocks, threads, shared_memory_size>>>(
                 padded_input, weight, grad_input, grad_weight, grad_output, max_indexes, 
                 batch_size, in_channels, out_channels, height, width);
             return;
         }
         else if (kernel_height == 5 && kernel_width == 5) {
-            morpho_operation_backward_specialized_kernel<Op, double, 5, 5><<<blocks, threads, shared_memory_size>>>(
+            morpho_operation_backward_kernel<Op, double, 5, 5><<<blocks, threads, shared_memory_size>>>(
                 padded_input, weight, grad_input, grad_weight, grad_output, max_indexes, 
                 batch_size, in_channels, out_channels, height, width);
             return;
         }
         else if (kernel_height == 7 && kernel_width == 7) {
-            morpho_operation_backward_specialized_kernel<Op, double, 7, 7><<<blocks, threads, shared_memory_size>>>(
+            morpho_operation_backward_kernel<Op, double, 7, 7><<<blocks, threads, shared_memory_size>>>(
                 padded_input, weight, grad_input, grad_weight, grad_output, max_indexes, 
                 batch_size, in_channels, out_channels, height, width);
             return;
         }
     }
-
-
-    int kernel_height_half = kernel_height / 2;
-    int kernel_width_half = kernel_width / 2;
-    
-    // morpho_operation_backward_general_kernel<Op, scalar_t><<<blocks, threads, shared_memory_size>>>(
-    //     padded_input, weight, grad_input, grad_weight, grad_output, max_indexes, 
-    //     batch_size, in_channels, out_channels, height, width,
-    //     padded_height, padded_width, kernel_height, kernel_width, kernel_height_half, kernel_width_half);
 }
 
 
-#define INSTANTIATE_MORPHO_SPECIALIZED_OP(T, H, W, OP) \
-    template __global__ void morpho_operation_forward_specialized_kernel<MORPHO_OPERATION::OP, T, H, W>( \
+#define INSTANTIATE_MORPHO_OP(T, H, W, OP) \
+    template __global__ void morpho_operation_forward_kernel<MORPHO_OPERATION::OP, T, H, W>( \
         const T*, const T*, T*, int64_t*, int, int, int, int, int); \
-    template __global__ void morpho_operation_backward_specialized_kernel<MORPHO_OPERATION::OP, T, H, W>( \
+    template __global__ void morpho_operation_backward_kernel<MORPHO_OPERATION::OP, T, H, W>( \
         const T*, const T*, T*, T*, const T*, const int64_t*, int, int, int, int, int);
-
 
 template struct MorphoPolicy<float, MORPHO_OPERATION::DILATION>;
 template struct MorphoPolicy<float, MORPHO_OPERATION::EROSION>;
 template struct MorphoPolicy<double, MORPHO_OPERATION::DILATION>;
 template struct MorphoPolicy<double, MORPHO_OPERATION::EROSION>;
 
-
-INSTANTIATE_MORPHO_SPECIALIZED_OP(float, 3, 3, DILATION)
-INSTANTIATE_MORPHO_SPECIALIZED_OP(float, 3, 3, EROSION)
-INSTANTIATE_MORPHO_SPECIALIZED_OP(float, 5, 5, DILATION)
-INSTANTIATE_MORPHO_SPECIALIZED_OP(float, 5, 5, EROSION)
-INSTANTIATE_MORPHO_SPECIALIZED_OP(float, 7, 7, DILATION)
-INSTANTIATE_MORPHO_SPECIALIZED_OP(float, 7, 7, EROSION)
-INSTANTIATE_MORPHO_SPECIALIZED_OP(double, 3, 3, DILATION)
-INSTANTIATE_MORPHO_SPECIALIZED_OP(double, 3, 3, EROSION)
-INSTANTIATE_MORPHO_SPECIALIZED_OP(double, 5, 5, DILATION)
-INSTANTIATE_MORPHO_SPECIALIZED_OP(double, 5, 5, EROSION)
-INSTANTIATE_MORPHO_SPECIALIZED_OP(double, 7, 7, DILATION)
-INSTANTIATE_MORPHO_SPECIALIZED_OP(double, 7, 7, EROSION)
+INSTANTIATE_MORPHO_OP(float, 3, 3, DILATION)
+INSTANTIATE_MORPHO_OP(float, 3, 3, EROSION)
+INSTANTIATE_MORPHO_OP(float, 5, 5, DILATION)
+INSTANTIATE_MORPHO_OP(float, 5, 5, EROSION)
+INSTANTIATE_MORPHO_OP(float, 7, 7, DILATION)
+INSTANTIATE_MORPHO_OP(float, 7, 7, EROSION)
+INSTANTIATE_MORPHO_OP(double, 3, 3, DILATION)
+INSTANTIATE_MORPHO_OP(double, 3, 3, EROSION)
+INSTANTIATE_MORPHO_OP(double, 5, 5, DILATION)
+INSTANTIATE_MORPHO_OP(double, 5, 5, EROSION)
+INSTANTIATE_MORPHO_OP(double, 7, 7, DILATION)
+INSTANTIATE_MORPHO_OP(double, 7, 7, EROSION)
 
 
 // Template instantiation for dilation !
