@@ -5,3 +5,9 @@ enum class MORPHO_OPERATION {
     DILATION,
     EROSION
 };
+
+enum class MORPHO_OPTI
+{
+    NONE,
+    INDEX
+};

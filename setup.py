@@ -37,8 +37,7 @@ else:
 
 setup(
     name="morphocore",
-    packages=find_packages("morphocore"),
-    package_dir={"": "morphocore"},
+    packages=find_packages(),
     include_package_data=True,
     
     ext_modules=[

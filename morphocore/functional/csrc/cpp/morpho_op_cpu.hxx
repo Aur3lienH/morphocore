@@ -2,8 +2,8 @@
 #include "morpho_op.hpp"
 
 
-template<MORPHO_OPERATION op, typename T>
-torch::Tensor morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight) 
+template<MORPHO_OPERATION op, typename T, MORPHO_OPTI opti>
+auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight) 
 {
 
     using Policy = MorphoPolicyCPU<T, op>;
@@ -32,22 +32,38 @@ torch::Tensor morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor we
     auto output_accessor = output.template accessor<T, 4>();
     auto padded_input_accessor = padded_input.template accessor<T, 4>();
     auto weight_accessor = weight.template accessor<T, 4>();
+
+    torch::Tensor max_indices;
+    if constexpr (opti == MORPHO_OPTI::INDEX) {
+        max_indices = torch::zeros({batch_size, out_channels, in_channels, height, width}, 
+                                input.options().dtype(torch::kLong));
+    }
+
+    auto max_indices_accessor = [&]() 
+    {
+        if constexpr (opti == MORPHO_OPTI::INDEX) 
+        {
+            return max_indices.template accessor<int64_t, 5>();
+        } 
+        else 
+        {
+            return typename torch::TensorAccessor<int64_t, 5>{}; 
+        }
+    }();
     
+    #pragma omp parallel for
     for (int64_t b = 0; b < batch_size; b++) 
     {
-        for(int64_t o = 0; o < out_channels; o++)
+        for(int64_t i = 0; i < in_channels; i++)
         {
-            for(int64_t i = 0; i < in_channels; i++)
+            for(int64_t o = 0; o < out_channels; o++)
             {
-                //#pragma omp parallel for simd
                 for (int64_t h = 0; h < height; h++) 
                 {
                     for (int64_t w = 0; w < width; w++) 
                     {
-
                         T best_value = Policy::initial_value();
-                        int64_t max_flat_index = 0;
-
+                        int64_t best_kh = 0, best_kw = 0;
                         for (int64_t kh = 0; kh < kernel_height; kh++) 
                         {
                             for (int64_t kw = 0; kw < kernel_width; kw++) 
@@ -57,16 +73,21 @@ torch::Tensor morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor we
                                 
                                 T val = Policy::combine(padded_input_accessor[b][i][ph][pw], weight_accessor[o][i][kh][kw]);
                                 
-                                int64_t flat_index = kh * kernel_width + kw;
                                 if (Policy::is_better(val, best_value)) 
                                 {
-                                    max_flat_index = flat_index;
+                                    constexpr if(opti == MORPHO_OPTI::index)
+                                    {
+                                        best_kh = kh;
+                                        best_kw = kw;
+                                    }
+
                                     best_value = val;
                                 }
                             }
                         }
                         
                         output_accessor[b][o][h][w] += best_value;
+                        
                     }
                 }
             }
@@ -74,8 +95,15 @@ torch::Tensor morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor we
         }
         
     }
-    
-    return output;
+
+    constexpr if(opti == MORPHO_OPTI::INDEX)
+    {
+        return std::make_tuple(output, max_indices);
+    }
+    else
+    {
+        return output;
+    }
 }
 
 

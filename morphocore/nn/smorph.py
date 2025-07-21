@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
-from alpha_module import AlphaModule
+from .alpha_module import AlphaModule
 from modules.morpho_kernel import apply_kernel
-from functional import smorph
+from morphocore.functional import smorph
 
 
-class Smorph(AlphaModule):
+class SMorph(AlphaModule):
 
     """
 
@@ -31,7 +31,7 @@ class Smorph(AlphaModule):
             kernel_shape (tuple): Shape of the morphological kernel
         """
 
-        super(Smorph, self).__init__(in_channel, out_channel, kernel_shape)
+        super(SMorph, self).__init__(in_channel, out_channel, kernel_shape)
 
     def forward(self, x : torch.Tensor):
 

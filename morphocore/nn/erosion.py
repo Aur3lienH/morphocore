@@ -1,8 +1,8 @@
-from morpho_module import MorphoModule
-from functional import erosion
+from .morpho_module import MorphoModule
+from morphocore.functional import erosion
 
 
-class Dilation(MorphoModule):
+class Erosion(MorphoModule):
     def __init__(self, in_channel : int, out_channel : int, kernel_shape : tuple):
         super().__init__(in_channel, out_channel, kernel_shape)
 

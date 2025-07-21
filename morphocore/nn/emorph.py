@@ -1,7 +1,7 @@
 import torch
 from torch import nn
-from alpha_module import AlphaModule
-from functional import emorph
+from .alpha_module import AlphaModule
+from morphocore.functional import emorph
 
 
 class EMorph(AlphaModule):
@@ -34,6 +34,7 @@ class EMorph(AlphaModule):
         """
 
         super().__init__(in_channel, out_channel, kernel_shape)
+        self.w2 = nn.Parameter(torch.rand((out_channel,in_channel,*kernel_shape),dtype=torch.float))
 
 
 
@@ -48,6 +49,6 @@ class EMorph(AlphaModule):
         Returns:
             Output tensor, shape : (batch, out_channels, height, width)
         """
-        return emorph(x, self.weight, self.alpha)
+        return emorph(x, self.weight, self.w2, self.alpha)
         
 
