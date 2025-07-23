@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from .alpha_module import AlphaModule
-from modules.morpho_kernel import apply_kernel
 from morphocore.functional import smorph
 
 

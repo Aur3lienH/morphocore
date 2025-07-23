@@ -3,26 +3,46 @@
 
 
 
-template torch::Tensor morpho_operation_forward_cpu<MORPHO_OPERATION::DILATION, float>(torch::Tensor input, torch::Tensor weight);
-template torch::Tensor morpho_operation_forward_cpu<MORPHO_OPERATION::DILATION, double>(torch::Tensor input, torch::Tensor weight);
-template torch::Tensor morpho_operation_forward_cpu<MORPHO_OPERATION::DILATION, torch::Half>(torch::Tensor input, torch::Tensor weight);
-template torch::Tensor morpho_operation_forward_cpu<MORPHO_OPERATION::DILATION, torch::BFloat16>(torch::Tensor input, torch::Tensor weight);
+template auto morpho_operation_forward_cpu<MORPHO_OPERATION::DILATION, float, true>(torch::Tensor input, torch::Tensor weight);
+template auto morpho_operation_forward_cpu<MORPHO_OPERATION::DILATION, double, true>(torch::Tensor input, torch::Tensor weight);
+// template auto morpho_operation_forward_cpu<MORPHO_OPERATION::DILATION, torch::Half, true>(torch::Tensor input, torch::Tensor weight);
+// template auto morpho_operation_forward_cpu<MORPHO_OPERATION::DILATION, torch::BFloat16, true>(torch::Tensor input, torch::Tensor weight);
 
-template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::DILATION, float>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output);
-template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::DILATION, double>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output);
-template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::DILATION, torch::Half>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output);
-template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::DILATION, torch::BFloat16>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output);
+template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::DILATION, float, true>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
+template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::DILATION, double, true>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
+// template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::DILATION, torch::Half, true>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
+// template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::DILATION, torch::BFloat16, true>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
+
+template auto morpho_operation_forward_cpu<MORPHO_OPERATION::DILATION, float, false>(torch::Tensor input, torch::Tensor weight);
+template auto morpho_operation_forward_cpu<MORPHO_OPERATION::DILATION, double, false>(torch::Tensor input, torch::Tensor weight);
+// template auto morpho_operation_forward_cpu<MORPHO_OPERATION::DILATION, torch::Half, false>(torch::Tensor input, torch::Tensor weight);
+// template auto morpho_operation_forward_cpu<MORPHO_OPERATION::DILATION, torch::BFloat16, false>(torch::Tensor input, torch::Tensor weight);
+
+template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::DILATION, float, false>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
+template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::DILATION, double, false>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
+// template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::DILATION, torch::Half, false>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
+// template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::DILATION, torch::BFloat16, false>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
 
 
-template torch::Tensor morpho_operation_forward_cpu<MORPHO_OPERATION::EROSION, float>(torch::Tensor input, torch::Tensor weight);
-template torch::Tensor morpho_operation_forward_cpu<MORPHO_OPERATION::EROSION, double>(torch::Tensor input, torch::Tensor weight);
-template torch::Tensor morpho_operation_forward_cpu<MORPHO_OPERATION::EROSION, torch::Half>(torch::Tensor input, torch::Tensor weight);
-template torch::Tensor morpho_operation_forward_cpu<MORPHO_OPERATION::EROSION, torch::BFloat16>(torch::Tensor input, torch::Tensor weight);
+template auto morpho_operation_forward_cpu<MORPHO_OPERATION::EROSION, float, true>(torch::Tensor input, torch::Tensor weight);
+template auto morpho_operation_forward_cpu<MORPHO_OPERATION::EROSION, double, true>(torch::Tensor input, torch::Tensor weight);
+// template auto morpho_operation_forward_cpu<MORPHO_OPERATION::EROSION, torch::Half, true>(torch::Tensor input, torch::Tensor weight);
+// template auto morpho_operation_forward_cpu<MORPHO_OPERATION::EROSION, torch::BFloat16, true>(torch::Tensor input, torch::Tensor weight);
 
-template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::EROSION, float>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output);
-template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::EROSION, double>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output);
-template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::EROSION, torch::Half>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output);
-template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::EROSION, torch::BFloat16>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output);
+template auto morpho_operation_forward_cpu<MORPHO_OPERATION::EROSION, float, false>(torch::Tensor input, torch::Tensor weight);
+template auto morpho_operation_forward_cpu<MORPHO_OPERATION::EROSION, double, false>(torch::Tensor input, torch::Tensor weight);
+// template auto morpho_operation_forward_cpu<MORPHO_OPERATION::EROSION, torch::Half, false>(torch::Tensor input, torch::Tensor weight);
+// template auto morpho_operation_forward_cpu<MORPHO_OPERATION::EROSION, torch::BFloat16, false>(torch::Tensor input, torch::Tensor weight);
+
+template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::EROSION, float, true>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
+template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::EROSION, double, true>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
+// template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::EROSION, torch::Half, true>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
+// template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::EROSION, torch::BFloat16, true>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
+
+template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::EROSION, float, false>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
+template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::EROSION, double, false>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
+// template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::EROSION, torch::Half, false>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
+// template torch::autograd::tensor_list morpho_operation_backward_cpu<MORPHO_OPERATION::EROSION, torch::BFloat16, false>(torch::Tensor input,torch::Tensor weight,torch::Tensor grad_output, torch::Tensor max_indices);
 
 
 template class MorphoOperation<MORPHO_OPERATION::DILATION>;

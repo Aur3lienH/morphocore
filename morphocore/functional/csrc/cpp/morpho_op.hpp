@@ -65,14 +65,15 @@ struct MorphoPolicyCPU<scalar_t, MORPHO_OPERATION::DILATION> {
     }
 };
 
-template<MORPHO_OPERATION op, typename T>
-torch::Tensor morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight);
+template<MORPHO_OPERATION op, typename T, bool save_index>
+auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight);
 
-template<MORPHO_OPERATION op, typename T>
+template<MORPHO_OPERATION op, typename T, bool save_index>
 torch::autograd::tensor_list morpho_operation_backward_cpu(
     torch::Tensor input,
     torch::Tensor weight,
-    torch::Tensor grad_output
+    torch::Tensor grad_output,
+    torch::Tensor max_indices
 );
 
 

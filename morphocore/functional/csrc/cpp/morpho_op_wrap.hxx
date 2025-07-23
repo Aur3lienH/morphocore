@@ -9,6 +9,11 @@
 #endif
 
 
+inline bool save_indices(torch::Tensor input, torch::Tensor weight) {
+    return false;
+}
+
+
 template<MORPHO_OPERATION Op>
 torch::Scalar get_padding_value(torch::ScalarType dtype) {
     if constexpr (Op == MORPHO_OPERATION::DILATION) {
@@ -30,16 +35,6 @@ torch::Scalar get_padding_value(torch::ScalarType dtype) {
     TORCH_CHECK(false, "Unsupported dtype for morphological operation");
     return torch::Scalar(0);
 }
-
-template<MORPHO_OPERATION Op, typename T>
-torch::Tensor morpho_dilation_forward_cpu(torch::Tensor input, torch::Tensor weight);  // Fixed typo
-
-template<MORPHO_OPERATION Op, typename T>
-torch::autograd::tensor_list morpho_dilation_backward_cpu(  // Fixed typo
-    torch::Tensor input,
-    torch::Tensor weight,
-    torch::Tensor grad_output
-);
 
 // CORRECTED FORWARD PASS:
 template <MORPHO_OPERATION Op>
@@ -121,18 +116,23 @@ torch::Tensor MorphoOperation<Op>::forward(
     } 
     else 
     {
-        // ✅ CORRECTED: Using your templated function with operation parameter
         constexpr const char* cpu_operation_name = "morpho_operation_forward_cpu";
         
-        output = AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), cpu_operation_name, [&] {
-            // ✅ Using your templated function with both Op and scalar_t parameters
-            return morpho_operation_forward_cpu<Op, scalar_t>(input_correct_dims, weight_correct_dims);
+        AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), cpu_operation_name, [&] 
+        {
+            if(save_indices(input, weight))
+            {
+                auto result = morpho_operation_forward_cpu<Op, scalar_t, true>(input_correct_dims, weight_correct_dims);
+                output = std::get<0>(result);
+                max_indices = std::get<1>(result);
+            }
+            else
+            {
+                output = morpho_operation_forward_cpu<Op, scalar_t, false>(input_correct_dims, weight_correct_dims);
+                max_indices = torch::empty({0}, torch::kLong);
+            }
         });
         
-        // Note: Your function returns torch::Tensor, not tuple, so max_indices would need to be handled differently
-        // You might need to modify your CPU function to also return max_indices for consistency
-        max_indices = torch::zeros({batch_size, out_channels, in_channels, height, width}, 
-                                input.options().dtype(torch::kLong));
     }
     
     output = input_dim_manager.ToOriginalTensor(output);
@@ -153,6 +153,7 @@ torch::autograd::tensor_list MorphoOperation<Op>::backward(
     
     torch::Tensor grad_input;
     torch::Tensor grad_weight;
+    bool indices_were_saved = max_indices.numel() > 0;
     
     if (input.is_cuda()) {
         #ifdef WITH_CUDA
@@ -213,9 +214,26 @@ torch::autograd::tensor_list MorphoOperation<Op>::backward(
         // ✅ CORRECTED: Using your templated function with operation parameter
         constexpr const char* cpu_operation_name = (Op == MORPHO_OPERATION::DILATION) ? "morpho_dilation_backward_cpu" : "morpho_erosion_backward_cpu";
         
-        auto result = AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), cpu_operation_name, [&] {
-            // ✅ Using your templated function with both Op and scalar_t parameters
-            return morpho_operation_backward_cpu<Op, scalar_t>(input, weight, grad_output);
+        torch::autograd::tensor_list result;
+        AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), cpu_operation_name, [&] 
+        {
+            if (indices_were_saved) 
+            {
+                result = morpho_operation_backward_cpu<Op, scalar_t, true>(
+                    input, 
+                    weight, 
+                    grad_output, 
+                    max_indices
+                );
+            } else 
+            {
+                result = morpho_operation_backward_cpu<Op, scalar_t, false>(
+                    input, 
+                    weight, 
+                    grad_output, 
+                    max_indices 
+                );
+            }
         });
         
         // ✅ Extract from tensor_list (which is std::vector<torch::Tensor>)
