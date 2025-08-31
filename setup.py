@@ -19,21 +19,52 @@ if with_cuda:
     Extension = CUDAExtension
     sources = cpp_sources + cuda_sources
     define_macros = [('WITH_CUDA', '1')]
+    
     extra_compile_args = {
-        'cxx': ['-O3', '-fopenmp'],
+        'cxx': [
+            '-O3',                    # Optimisation maximale
+            '-DNDEBUG',              # Retire les assertions debug  
+            '-ffast-math',           # Optimisations mathématiques
+            '-fopenmp',              # Parallélisation OpenMP
+            '-march=native',         # Utilise toutes les instructions CPU disponibles
+            '-std=c++17',
+            '-Wunused-but-set-variable',
+            '-finline-functions'
+        ],
         'nvcc': [
-            '-O3',
-            '--use_fast_math',
-            '-gencode=arch=compute_86,code=sm_86',
-            '--maxrregcount=72',
+            '-O3',                   # Optimisation maximale
+            '--use_fast_math',       # Math rapide sur GPU
+            '-std=c++17',
+            
+            # Support des architectures courantes (2018-2024)
+            '-gencode=arch=compute_75,code=sm_75',  # RTX 20xx, Tesla T4
+            '-gencode=arch=compute_80,code=sm_80',  # RTX 30xx, A100  
+            '-gencode=arch=compute_86,code=sm_86',  # RTX 30xx Ti/Super
+            '-gencode=arch=compute_89,code=sm_89',  # RTX 40xx
+            
+            # Optimisations registres
+            '--maxrregcount=96',
+            '-Xcompiler=-O3',
             '-Xcompiler=-fopenmp',
+            '-Wunused-but-set-variable'
         ]
     }
 else:
     Extension = CppExtension
     sources = cpp_sources
     define_macros = []
-    extra_compile_args = {'cxx': ['-O3', '-fopenmp']}
+    
+    extra_compile_args = {
+        'cxx': [
+            '-O3',                    # Optimisation maximale
+            '-DNDEBUG',              # Retire les assertions debug
+            '-ffast-math',           # Optimisations mathématiques  
+            '-fopenmp',              # Parallélisation OpenMP
+            '-march=native',         # Utilise toutes les instructions CPU disponibles
+            '-std=c++17',
+            '-finline-functions'
+        ]
+    }
 
 setup(
     name="morphocore",
@@ -50,7 +81,8 @@ setup(
                 'morphocore/functional/csrc/cuda'
             ],
             define_macros=define_macros,
-            extra_compile_args=extra_compile_args
+            extra_compile_args=extra_compile_args,
+            extra_link_args=['-fopenmp'],  # Link OpenMP
         ),
     ],
     cmdclass={

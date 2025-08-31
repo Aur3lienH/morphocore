@@ -10,5 +10,4 @@ def erosion(x, w):
         x (torch.Tensor): input
         w (torch.Tensor): weight
     """
-
     return morpho_erosion(x, w)

@@ -4,66 +4,42 @@
 #include <torch/torch.h>
 #include "morpho_op_enum.hpp"
 
-template<typename scalar_t, MORPHO_OPERATION Op>
-struct MorphoPolicyCPU;
 
-
-template<typename scalar_t>
-struct MorphoPolicyCPU<scalar_t, MORPHO_OPERATION::EROSION> {
-    inline static scalar_t initial_value() 
-    {
-        return 10000;
+template<typename T, MORPHO_OPERATION op>
+struct MorphoPolicyCPU {
+    static inline __attribute__((always_inline)) constexpr T padding_value() {
+        if constexpr (op == MORPHO_OPERATION::DILATION) {
+            return -std::numeric_limits<T>::infinity();
+        } else {
+            return std::numeric_limits<T>::infinity();
+        }
     }
     
-    inline static scalar_t combine(scalar_t input, scalar_t weight) 
-    {
-        return input - weight;
+    static inline __attribute__((always_inline)) constexpr T initial_value() {
+        if constexpr (op == MORPHO_OPERATION::DILATION) {
+            return -std::numeric_limits<T>::infinity();
+        } else {
+            return std::numeric_limits<T>::infinity();
+        }
     }
     
-    inline static bool is_better(scalar_t new_val, scalar_t current_best) 
-    {
-        return new_val < current_best;
+    static inline __attribute__((always_inline)) T combine(T input_val, T weight_val) {
+        if constexpr (op == MORPHO_OPERATION::DILATION) {
+            return input_val + weight_val;
+        } else {
+            return input_val - weight_val;
+        }
     }
-
-    inline static scalar_t padding_value() 
-    {
-        return std::numeric_limits<scalar_t>::infinity();
-    }
-
-    inline static int weight_gradient_sign() 
-    {
-        return -1;  
+    
+    static inline __attribute__((always_inline)) bool is_better(T val, T best) {
+        if constexpr (op == MORPHO_OPERATION::DILATION) {
+            return val > best;
+        } else {
+            return val < best;
+        }
     }
 };
 
-
-template<typename scalar_t>
-struct MorphoPolicyCPU<scalar_t, MORPHO_OPERATION::DILATION> {
-    inline static scalar_t initial_value() 
-    {
-        return -1000;
-    }
-    
-    inline static scalar_t combine(scalar_t input, scalar_t weight) 
-    {
-        return input + weight;
-    }
-    
-    inline static bool is_better(scalar_t new_val, scalar_t current_best) 
-    {
-        return new_val > current_best;
-    }
-
-    inline static scalar_t padding_value() 
-    {
-        return -1000;
-    }
-
-    inline static int weight_gradient_sign() 
-    {
-        return 1;  
-    }
-};
 
 template<MORPHO_OPERATION op, typename T, bool save_index>
 auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight);
