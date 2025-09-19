@@ -1,0 +1,146 @@
+# Modern C++ clang-format configuration
+# Based on LLVM style with modern C++ enhancements
+
+BasedOnStyle: LLVM
+
+# Column width and line breaking
+ColumnLimit: 140
+ReflowComments: true
+BreakBeforeBinaryOperators: NonAssignment
+BreakBeforeTernaryOperators: true
+BreakConstructorInitializers: BeforeColon
+BreakInheritanceList: BeforeColon
+BreakStringLiterals: true
+
+# Indentation
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+IndentCaseLabels: true
+IndentPPDirectives: BeforeHash
+IndentWrappedFunctionNames: false
+AccessModifierOffset: -4
+
+# Spacing
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceAfterTemplateKeyword: true
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCpp11BracedList: false
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceBeforeParens: ControlStatements
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 2
+SpacesInAngles: false
+SpacesInCStyleCastParentheses: false
+SpacesInContainerLiterals: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Braces
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: false
+  AfterClass: true
+  AfterControlStatement: Always
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: false
+  AfterObjCDeclaration: false
+  AfterStruct: true
+  AfterUnion: true
+  AfterExternBlock: false
+  BeforeCatch: true
+  BeforeElse: true
+  BeforeLambdaBody: false
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
+
+# Modern C++ features
+Cpp11BracedListStyle: true
+FixNamespaceComments: true
+NamespaceIndentation: None
+CompactNamespaces: false
+
+# Function and method formatting
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortLambdasOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Empty
+AllowShortEnumsOnASingleLine: true
+
+# Alignment
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveBitFields: false
+AlignConsecutiveDeclarations: false
+AlignConsecutiveMacros: false
+AlignEscapedNewlines: Right
+AlignOperands: Align
+AlignTrailingComments: true
+
+# Include sorting
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  # Main header (for .cpp files)
+  - Regex:           '^".*\.h"$'
+    Priority:        1
+    SortPriority:    1
+  # System headers
+  - Regex:           '^<[^.]*>$'
+    Priority:        2
+    SortPriority:    2
+  # System headers with extensions
+  - Regex:           '^<.*\.[^>]*>$'
+    Priority:        3
+    SortPriority:    3
+  # Third-party headers
+  - Regex:           '^<.*>$'
+    Priority:        4
+    SortPriority:    4
+  # Project headers
+  - Regex:           '^".*"$'
+    Priority:        5
+    SortPriority:    5
+
+# Template and generic formatting
+AlwaysBreakTemplateDeclarations: Yes
+BreakBeforeConceptDeclarations: true
+IndentRequires: true
+RequiresClausePosition: OwnLine
+
+# Penalty settings for line breaking decisions
+PenaltyBreakAssignment: 2
+PenaltyBreakBeforeFirstCallParameter: 19
+PenaltyBreakComment: 300
+PenaltyBreakFirstLessLess: 120
+PenaltyBreakString: 1000
+PenaltyBreakTemplateDeclaration: 10
+PenaltyExcessCharacter: 1000000
+PenaltyIndentedWhitespace: 0
+PenaltyReturnTypeOnItsOwnLine: 200
+
+# Other modern settings
+DeriveLineEnding: true
+DerivePointerAlignment: false
+PointerAlignment: Left
+ReferenceAlignment: Pointer
+QualifierAlignment: Leave
+SeparateDefinitionBlocks: Always
+ShortNamespaceLines: 1
+EmptyLineAfterAccessModifier: Never
+EmptyLineBeforeAccessModifier: LogicalBlock
+IndentAccessModifiers: false
+PackConstructorInitializers: NextLine
+
+# Language-specific
+Standard: Latest
+Language: Cpp
