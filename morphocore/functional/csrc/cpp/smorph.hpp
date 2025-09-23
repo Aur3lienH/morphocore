@@ -1,7 +1,10 @@
 #pragma once
 #include <torch/torch.h>
+#include "morpho_op_enum.hpp"
 
-class Smorph : public torch::autograd::Function<Smorph> 
+
+template <MORPHO_MERGE merge>
+class Smorph : public torch::autograd::Function<Smorph<merge>> 
 {
 public:
     static torch::Tensor forward(

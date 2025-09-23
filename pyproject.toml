@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=61", "wheel", "torch"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "morphocore"
+dynamic = ["version"]
+description = "Morphological operations with CUDA acceleration"
+readme = "README.md"
+authors = [{name = "Aurelien HURAND", email = "aurelien.hurand@gmail.com"}]
+license = "MIT"  # SPDX expression simple
+requires-python = ">=3.8"
+keywords = ["morphology", "cuda", "pytorch", "computer-vision"]
+
+dependencies = [
+    "torch>=1.12.0",
+    "numpy>=1.19.0",
+]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers", 
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering/Image Processing",
+]
+
+[project.urls]
+"Homepage" = "https://gitlab.lre.epita.fr/aurelien.hurand/morphocore"
+"Bug Reports" = "https://gitlab.lre.epita.fr/aurelien.hurand/morphocore/-/issues"
+"Source" = "https://gitlab.lre.epita.fr/aurelien.hurand/morphocore"
+
+[tool.setuptools.packages.find]
+exclude = [
+    "morphocore.functional.csrc",
+    "morphocore.functional.csrc.*",
+    "morphocore.functional.csrc.cpp", 
+    "morphocore.functional.csrc.cuda"
+]
+# Configuration cibuildwheel (reste identique)
+[tool.cibuildwheel]
+build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
+skip = "*-win32 *-manylinux_i686 pp*"
+
+[[tool.cibuildwheel.overrides]]
+select = "*linux*"
+environment = { MORPHO_FORCE_CUDA="1", CUDA_HOME="/usr/local/cuda-12.0" }
+
+[tool.cibuildwheel.linux]
+before-all = [
+    "yum install -y epel-release", 
+    "yum install -y wget",
+    "./scripts/install_cuda_linux.sh"
+]
+repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"
+
+[tool.cibuildwheel.macos]
+environment = { MORPHO_DISABLE_CUDA="1" }
+
+[tool.cibuildwheel.windows]
+environment = { MORPHO_DISABLE_CUDA="1" }

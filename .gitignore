@@ -1,3 +1,9 @@
 *.o
 *.png
 *.pyc
+*.so
+__pycache__/
+build/
+morphocore.egg-info/
+dist/
+.vscode/

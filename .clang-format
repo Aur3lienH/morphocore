@@ -4,7 +4,7 @@
 BasedOnStyle: LLVM
 
 # Column width and line breaking
-ColumnLimit: 140
+ColumnLimit: 150
 ReflowComments: true
 BreakBeforeBinaryOperators: NonAssignment
 BreakBeforeTernaryOperators: true
@@ -86,30 +86,31 @@ AlignEscapedNewlines: Right
 AlignOperands: Align
 AlignTrailingComments: true
 
+SortIncludes: Never
 # Include sorting
-SortIncludes: CaseSensitive
-IncludeBlocks: Regroup
-IncludeCategories:
-  # Main header (for .cpp files)
-  - Regex:           '^".*\.h"$'
-    Priority:        1
-    SortPriority:    1
-  # System headers
-  - Regex:           '^<[^.]*>$'
-    Priority:        2
-    SortPriority:    2
-  # System headers with extensions
-  - Regex:           '^<.*\.[^>]*>$'
-    Priority:        3
-    SortPriority:    3
-  # Third-party headers
-  - Regex:           '^<.*>$'
-    Priority:        4
-    SortPriority:    4
-  # Project headers
-  - Regex:           '^".*"$'
-    Priority:        5
-    SortPriority:    5
+# SortIncludes: CaseSensitive
+# IncludeBlocks: Regroup
+# IncludeCategories:
+#   # Main header (for .cpp files)
+#   - Regex:           '^".*\.h"$'
+#     Priority:        1
+#     SortPriority:    1
+#   # System headers
+#   - Regex:           '^<[^.]*>$'
+#     Priority:        2
+#     SortPriority:    2
+#   # System headers with extensions
+#   - Regex:           '^<.*\.[^>]*>$'
+#     Priority:        3
+#     SortPriority:    3
+#   # Third-party headers
+#   - Regex:           '^<.*>$'
+#     Priority:        4
+#     SortPriority:    4
+#   # Project headers
+#   - Regex:           '^".*"$'
+#     Priority:        5
+#     SortPriority:    5
 
 # Template and generic formatting
 AlwaysBreakTemplateDeclarations: Yes

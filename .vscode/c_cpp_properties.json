@@ -5,18 +5,19 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "/opt/cuda/include",
-                "/home/aurelien/.conda/envs/neuromorpho11/lib/python3.11/site-packages/torch/include",
-                "/home/aurelien/.conda/envs/neuromorpho11/lib/python3.11/site-packages/torch/include/torch/csrc/api/include",
-                "/home/aurelien/.conda/envs/neuromorpho11/include/python3.11"
+                "${workspaceFolder}/.venv/include",
+                "${workspaceFolder}/.venv/lib/python*/site-packages/torch/include",
+                "${workspaceFolder}/.venv/lib/python*/site-packages/torch/include/torch/csrc/api/include"
             ],
             "compilerPath": "/usr/bin/gcc",
-            "cStandard": "c20",
+            "cStandard": "c99",
             "cppStandard": "c++20",
             "intelliSenseMode": "linux-gcc-x64",
             "defines": [
                 "WITH_CUDA"
-            ],
-        },
+            ]
+        }
     ],
+    
     "version": 4
 }

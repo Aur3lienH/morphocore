@@ -1,7 +1,8 @@
 from setuptools import setup, find_packages
-from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDAExtension
 import os
 import torch
+import sys
+from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDAExtension
 
 path_to_cpp = "morphocore/functional/csrc/cpp"
 path_to_cuda = "morphocore/functional/csrc/cuda"
@@ -13,7 +14,20 @@ cpp_sources = [os.path.join(path_to_cpp, file) for file in cpp_files]
 cuda_sources = [os.path.join(path_to_cuda, file) for file in cuda_files]
 
 # Détection automatique de CUDA
-with_cuda = torch.cuda.is_available()
+with_cuda = os.environ.get('MORPHO_WITH_CUDA', '1') == '1' and torch.cuda.is_available()
+
+if sys.platform.startswith('linux'):
+    cxx_flags = ['-O3', '-DNDEBUG', '-std=c++17', '-ffast-math', '-fopenmp', '-Wno-unused-variable']
+    link_args = ['-fopenmp']
+elif sys.platform.startswith('darwin'):
+    cxx_flags = ['-O3', '-DNDEBUG', '-std=c++17', '-ffast-math']
+    link_args = ['-lomp']
+elif sys.platform.startswith('win'):
+    cxx_flags = ['/O2', '/DNDEBUG', '/std:c++17', '/openmp']
+    link_args = []
+else:
+    cxx_flags = ['-O2', '-std=c++17']
+    link_args = []
 
 if with_cuda:
     Extension = CUDAExtension
@@ -21,28 +35,16 @@ if with_cuda:
     define_macros = [('WITH_CUDA', '1')]
     
     extra_compile_args = {
-        'cxx': [
-            '-O3',                    # Optimisation maximale
-            '-DNDEBUG',              # Retire les assertions debug  
-            '-ffast-math',           # Optimisations mathématiques
-            '-fopenmp',              # Parallélisation OpenMP
-            '-march=native',         # Utilise toutes les instructions CPU disponibles
-            '-std=c++17',
-            '-Wunused-but-set-variable',
-            '-finline-functions'
-        ],
+        'cxx': cxx_flags,
         'nvcc': [
-            '-O3',                   # Optimisation maximale
-            '--use_fast_math',       # Math rapide sur GPU
+            '-O3',
+            '--use_fast_math',
             '-std=c++17',
-            
-            # Support des architectures courantes (2018-2024)
-            '-gencode=arch=compute_75,code=sm_75',  # RTX 20xx, Tesla T4
-            '-gencode=arch=compute_80,code=sm_80',  # RTX 30xx, A100  
-            '-gencode=arch=compute_86,code=sm_86',  # RTX 30xx Ti/Super
-            '-gencode=arch=compute_89,code=sm_89',  # RTX 40xx
-            
-            # Optimisations registres
+            '-gencode=arch=compute_75,code=sm_75',
+            '-gencode=arch=compute_80,code=sm_80',
+            '-gencode=arch=compute_86,code=sm_86',
+            '-gencode=arch=compute_89,code=sm_89',
+            '-gencode=arch=compute_120,code=sm_120',
             '--maxrregcount=96',
             '-Xcompiler=-O3',
             '-Xcompiler=-fopenmp',
@@ -55,22 +57,11 @@ else:
     define_macros = []
     
     extra_compile_args = {
-        'cxx': [
-            '-O3',                    # Optimisation maximale
-            '-DNDEBUG',              # Retire les assertions debug
-            '-ffast-math',           # Optimisations mathématiques  
-            '-fopenmp',              # Parallélisation OpenMP
-            '-march=native',         # Utilise toutes les instructions CPU disponibles
-            '-std=c++17',
-            '-finline-functions'
-        ]
+        'cxx': cxx_flags
     }
 
+# ✨ Setup simplifié - SEULEMENT les extensions
 setup(
-    name="morphocore",
-    packages=find_packages(),
-    include_package_data=True,
-    
     ext_modules=[
         Extension(
             name="cpp_operation",
@@ -82,11 +73,12 @@ setup(
             ],
             define_macros=define_macros,
             extra_compile_args=extra_compile_args,
-            extra_link_args=['-fopenmp'],  # Link OpenMP
+            extra_link_args=link_args,
         ),
     ],
     cmdclass={
         'build_ext': BuildExtension
     },
-    version="0.0.1",
+    include_package_data=False,
+    
 )
