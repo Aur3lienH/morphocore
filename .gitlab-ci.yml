@@ -13,10 +13,11 @@ cache:
 
 test:
   stage: test
-  image: python:3.11
+  image: nvidia/cuda:12.2-devel-ubuntu22.04
   services:
     - docker:dind
   before_script:
+    - apt-get update && apt-get install -y python3 python3-pip python3-venv
     - python -m venv .venv
     - source .venv/bin/activate
     - pip install --upgrade pip
@@ -37,13 +38,17 @@ test:
 
 build-wheels:
   stage: build
-  image: python:3.11
+  image: nvidia/cuda:12.2-devel-ubuntu22.04
   services:
     - docker:dind
   variables:
     DOCKER_DRIVER: overlay2
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
+    - apt-get update && apt-get install -y python3 python3-pip python3-venv
+    - python -m venv .venv
+    - source .venv/bin/activate
+    - pip install --upgrade pip
     - pip install build
   script:
     - python -m build --wheel --no-isolation --outdir wheelhouse/
