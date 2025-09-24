@@ -23,7 +23,7 @@ test:
     - source .venv/bin/activate
     - pip install --upgrade pip
     - pip install pytest torch numpy pytest-benchmark
-    - pip install -e .  
+    - MORPHO_WITH_CUDA=0 pip install -e .  
   script:
     - pytest tests/ -v -k "cpu" --junitxml=junit.xml  
     - python -c "import morphocore; print('Import successful')"  
@@ -54,7 +54,7 @@ build-wheels:
   - pip install build wheel setuptools torch
   - pip install --upgrade setuptools wheel
   script:
-    - python -m build --wheel --no-isolation --outdir wheelhouse/
+    - MORPHO_WITH_CUDA=0 python -m build --wheel --no-isolation --outdir wheelhouse/
   artifacts:
     paths:
       - wheelhouse/
