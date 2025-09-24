@@ -29,14 +29,13 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: C++",
-    "License :: OSI Approved :: MIT License",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Multimedia :: Graphics",
     "Environment :: GPU",
     "Environment :: GPU :: NVIDIA CUDA",
-    "Operating System :: OS Independent",
+    "Operating System :: POSIX :: Linux",
 ]
 
 [project.urls]
