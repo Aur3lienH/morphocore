@@ -22,7 +22,7 @@ class EMorph(AlphaModule):
         - When alpha is close to 0 -> then Emorph is something between an erosion and a dilation.
     """
 
-    def __init__(self, in_channel : int, out_channel : int, kernel_shape : tuple):
+    def __init__(self, in_channel : int, out_channel : int, kernel_shape : tuple, channel_merge_mode: str = "sum", init_alpha: float = 0.0):
 
         """
         Initialize Emorph Module
@@ -33,7 +33,7 @@ class EMorph(AlphaModule):
             kernel_shape (tuple): Shape of the morphological kernel
         """
 
-        super().__init__(in_channel, out_channel, kernel_shape)
+        super().__init__(in_channel, out_channel, kernel_shape, channel_merge_mode, init_alpha)
         self.w2 = nn.Parameter(torch.rand((out_channel,in_channel,*kernel_shape),dtype=torch.float))
 
 
@@ -49,6 +49,6 @@ class EMorph(AlphaModule):
         Returns:
             Output tensor, shape : (batch, out_channels, height, width)
         """
-        return emorph(x, self.weight, self.w2, self.alpha)
+        return emorph(x, self.weight, self.w2, self.alpha, self.channel_merge_mode)
         
 
