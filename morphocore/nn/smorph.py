@@ -44,4 +44,4 @@ class SMorph(AlphaModule):
             Output tensor, shape : (batch, out_channels, height, width)
         """
 
-        return smorph(x, self.weight, self.alpha)
+        return smorph(x, self.weight, self.alpha, self.channel_merge_mode)

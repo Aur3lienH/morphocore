@@ -2,6 +2,7 @@
 #include "smorph_cpu.hpp"
 #include "../cpp/morpho_op_enum.hpp"
 #include <torch/torch.h>
+#include "reshaper.hpp"
 
 #ifdef WITH_CUDA
     #include <cuda_runtime.h>
@@ -20,8 +21,13 @@
 template <MORPHO_MERGE merge>
 torch::Tensor Smorph<merge>::forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight, torch::Tensor alpha)
 {
-    auto input_shape = input.sizes();
-    auto weight_shape = weight.sizes();
+    TensorInputDim input_dim_manager(input);
+    TensorWeightDim weight_dim_manager(weight);
+    torch::Tensor input_correct_dims = input_dim_manager.To4DTensor(input);
+    torch::Tensor weight_correct_dims = weight_dim_manager.To4DTensor(weight);
+    auto input_shape = input_correct_dims.sizes();
+    auto weight_shape = weight_correct_dims.sizes();
+
     // TORCH_CHECK(input.dim() == 4, "Input must be a 4d tensor (batch_size, in_channels, height, width)");
     // TORCH_CHECK(weight.dim() == 4, "Weight must be a 4d tensor (out_channels, in_channels, kernel_height, kernel_width)");
     // TORCH_CHECK(input_shape[1] == weight_shape[1], "Input channels must match weight input channels");
@@ -75,10 +81,11 @@ torch::Tensor Smorph<merge>::forward(torch::autograd::AutogradContext* ctx, torc
         torch::Tensor output = torch::zeros({input_shape[0], weight_shape[0], input_shape[2], input_shape[3]}, input.options());
         torch::Tensor reference_values = torch::zeros({input_shape[0], weight_shape[0], input_shape[2], input_shape[3]}, input.options());
         torch::Tensor max_values = torch::zeros({input_shape[0], weight_shape[0], input_shape[2], input_shape[3]}, input.options());
-        AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "smorph_forward_cpu", [&] {
-            output = smorph_forward_cpu<merge, scalar_t>(input, weight, alpha.item<scalar_t>());
+        AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), "smorph_forward_cpu", [&] {
+            output = smorph_forward_cpu<merge, scalar_t>(input_correct_dims, weight_correct_dims, alpha.item<scalar_t>());
         });
-        ctx->save_for_backward({output, reference_values, max_values, alpha, input, weight});
+        output = input_dim_manager.ToOriginalTensor(output);
+        ctx->save_for_backward({output, reference_values, max_values, alpha, input_correct_dims, weight_correct_dims});
         return output;
     }
     return torch::Tensor();
