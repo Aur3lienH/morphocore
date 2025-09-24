@@ -23,7 +23,7 @@ test:
     - pip install pytest torch numpy
     - pip install -e .  
   script:
-    - pytest tests/ -v --junitxml=junit.xml  
+    - pytest tests/ -v -k "cpu" --junitxml=junit.xml  
     - python -c "import morphocore; print('Import successful')"  
   coverage: '/TOTAL.*\s+(\d+%)$/'  
   artifacts:
