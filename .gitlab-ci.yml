@@ -13,7 +13,7 @@ cache:
 
 test:
   stage: test
-  image: python:3.11
+  image: nvidia/cuda:11.8-devel-ubuntu20.04
   services:
     - docker:dind
   before_script:
