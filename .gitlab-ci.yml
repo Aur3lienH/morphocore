@@ -45,7 +45,6 @@ build-wheels:
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
     - pip install build
-    - docker info  
   script:
     - python -m build --wheel --no-isolation --outdir wheelhouse/
   artifacts:
