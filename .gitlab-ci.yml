@@ -13,18 +13,11 @@ cache:
 
 test:
   stage: test
-  image: nvidia/cuda:11.8-devel-ubuntu20.04
+  image: nvidia/cuda:11.8.0-devel-ubuntu22.04
   services:
     - docker:dind
   before_script:
-    - apt-get update
-    - apt-get install -y wget gnupg2
-    - wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
-    - dpkg -i cuda-keyring_1.0-1_all.deb
-    - apt-get update
-    - apt-get install -y cuda-toolkit-12-2  # or desired version
-    - export PATH=/usr/local/cuda/bin:$PATH
-    - export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+    - apt-get update && apt-get install -y python3 python3-pip python3-venv
 
     - python -m venv .venv
     - source .venv/bin/activate
@@ -46,21 +39,14 @@ test:
 
 build-wheels:
   stage: build
-  image: python:3.11
+  image: nvidia/cuda:11.8.0-devel-ubuntu22.04
   services:
     - docker:dind
   variables:
     DOCKER_DRIVER: overlay2
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
-    - apt-get update
-    - apt-get install -y wget gnupg2
-    - wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
-    - dpkg -i cuda-keyring_1.0-1_all.deb
-    - apt-get update
-    - apt-get install -y cuda-toolkit-12-2  # or desired version
-    - export PATH=/usr/local/cuda/bin:$PATH
-    - export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+  - apt-get update && apt-get install -y python3 python3-pip python3-venv
 
     - python -m venv .venv
     - source .venv/bin/activate
