@@ -1,5 +1,8 @@
 #include "morpho_op.hpp"
 
+//TODO: Add float16 support !
+/// @Brief Template instantiations for morphological operations (dilation and erosion) with different merge policies (ADD, MAX, MIN, AVERAGE) and data types (float, double).
+
 // ----------------------------------TORCH CLASSES----------------------------------------
 
 template class MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::ADD>;

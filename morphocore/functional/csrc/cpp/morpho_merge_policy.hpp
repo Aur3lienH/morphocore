@@ -1,6 +1,9 @@
 #pragma once
 #include "morpho_op_enum.hpp"
 
+/// @brief Merge policy for morphological operations to differentiate between erosion and dilation.
+/// @tparam T Data type of tensor elements.
+/// @tparam merge_op Merge channel policy (ADD, MAX, MIN, AVERAGE).
 template <typename T, MORPHO_MERGE merge_op>
 struct MorphoMergePolicy
 {

@@ -2,6 +2,9 @@
 #include <limits>
 #include "morpho_op_enum.hpp"
 
+/// @brief Merge channels policy for GPU implementations.
+/// @tparam scalar_t Data type of the tensors (float or double)
+/// @tparam merge_op Merge channel mode to use.
 template <typename scalar_t, MORPHO_MERGE merge_op>
 struct MorphoMergePolicyGPU
 {

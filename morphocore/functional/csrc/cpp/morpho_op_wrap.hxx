@@ -9,17 +9,25 @@
     #include <cuda_runtime.h>
 #endif
 
+//TODO: Update the logic to save indices when more performant. (Small kernel, Small images)
+/// @brief Function to determine if indices should be saved based on input and weight tensors.
+/// @param input Input tensor of shape [batch, channels, height, width].
+/// @param weight Weight tensor of shape [out_channels, in_channels, kernel_height, kernel_width].
+/// @return True if indices should be saved, false otherwise.
 inline bool save_indices(torch::Tensor input, torch::Tensor weight)
 {
     return false;
 }
 
+/// @brief Get the padding value for a given morphological operation and data type.
+/// @tparam Op Morphological operation type (e.g., dilation, erosion).
+/// @param dtype Data type of the tensor elements.
+/// @return Padding value as a scalar.
 template <MORPHO_OPERATION Op>
 torch::Scalar get_padding_value(torch::ScalarType dtype)
 {
     if constexpr (Op == MORPHO_OPERATION::DILATION)
     {
-        // For dilation, use negative infinity as padding
         if (dtype == torch::kFloat)
         {
             return torch::Scalar(-std::numeric_limits<float>::infinity());
@@ -30,8 +38,7 @@ torch::Scalar get_padding_value(torch::ScalarType dtype)
         }
     }
     else
-    {  // EROSION
-        // For erosion, use positive infinity as padding
+    {  
         if (dtype == torch::kFloat)
         {
             return torch::Scalar(std::numeric_limits<float>::infinity());
@@ -46,7 +53,13 @@ torch::Scalar get_padding_value(torch::ScalarType dtype)
     return torch::Scalar(0);
 }
 
-// CORRECTED FORWARD PASS:
+/// @brief Forward wrapper for morphological operations. (Choose between CPU and CUDA)
+/// @tparam Op Morphological operation (dilation or erosion).
+/// @tparam merge Merge channel policy.
+/// @param ctx context to save tensors for backward pass.
+/// @param input Input tensor of shape [batch, in_channels, height, width].
+/// @param weight Weight tensor of shape [out_channels, in_channels, kernel_height, kernel_width].
+/// @return Output tensor of shape [batch, out_channels, height, width].
 template <MORPHO_OPERATION Op, MORPHO_MERGE merge>
 torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight)
 {
@@ -131,6 +144,12 @@ torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradConte
     return output;
 }
 
+/// @brief Backward wrapper for morphological operations. (Choose between CPU and CUDA)
+/// @tparam Op Morphological operation (dilation or erosion).
+/// @tparam merge Merge channel policy.
+/// @param ctx context to retrieve saved tensors from forward pass.
+/// @param grad_outputs Gradient tensors from the next layer.
+/// @return Gradient tensors for the input and weight.
 template <MORPHO_OPERATION Op, MORPHO_MERGE merge>
 torch::autograd::tensor_list MorphoOperation<Op, merge>::backward(torch::autograd::AutogradContext* ctx, torch::autograd::tensor_list grad_outputs)
 {

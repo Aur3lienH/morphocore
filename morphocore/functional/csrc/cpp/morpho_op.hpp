@@ -6,6 +6,9 @@
 
 #include "morpho_op_enum.hpp"
 
+/// @brief Morphological operation class implementing forward and backward passes (dispatcher).
+/// @tparam op Morphological operation (dilation or erosion).
+/// @tparam merge Merge channel policy.
 template <MORPHO_OPERATION op, MORPHO_MERGE merge>
 class MorphoOperation : public torch::autograd::Function<MorphoOperation<op, merge>>
 {
@@ -14,6 +17,7 @@ public:
 
     static torch::autograd::tensor_list backward(torch::autograd::AutogradContext* ctx, torch::autograd::tensor_list grad_outputs);
 };
+
 
 template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index>
 auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight);

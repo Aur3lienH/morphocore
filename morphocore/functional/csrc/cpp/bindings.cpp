@@ -15,6 +15,11 @@ using MorphoErosionMax = MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE
 using MorphoErosionMin = MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::MIN>;
 using MorphoErosionAverage = MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::AVERAGE>;
 
+/// @brief Morphological dilation operation
+/// @param input Input tensor
+/// @param weight Structuring element
+/// @param merge Merge channel mode
+/// @return Output tensor
 torch::Tensor morpho_dilation(torch::Tensor input, torch::Tensor weight, MORPHO_MERGE merge)
 {
     switch (merge)
@@ -27,6 +32,11 @@ torch::Tensor morpho_dilation(torch::Tensor input, torch::Tensor weight, MORPHO_
     }
 }
 
+/// @brief Morphological erosion operation
+/// @param input Input tensor
+/// @param weight Structuring element
+/// @param merge Merge channel mode
+/// @return Output tensor
 torch::Tensor morpho_erosion(torch::Tensor input, torch::Tensor weight, MORPHO_MERGE merge)
 {
     switch (merge)
@@ -39,6 +49,12 @@ torch::Tensor morpho_erosion(torch::Tensor input, torch::Tensor weight, MORPHO_M
     }
 }
 
+/// @brief Smorph operation (Smooth approximation of erosion or dilation) alpha->-inf => erosion, alpha > 0 => dilation
+/// @param input Input tensor
+/// @param weight Structuring element
+/// @param alpha Smoothing factor
+/// @param merge Merge channel mode
+/// @return Output tensor
 torch::Tensor smorph(torch::Tensor input, torch::Tensor weight, torch::Tensor alpha, MORPHO_MERGE merge)
 {
     switch (merge)
@@ -51,8 +67,10 @@ torch::Tensor smorph(torch::Tensor input, torch::Tensor weight, torch::Tensor al
     }
 }
 
+/// @brief Pybind11 module definition
 PYBIND11_MODULE(cpp_operation, m)
 {
+    // Bind the MORPHO_MERGE enum for Python
     py::enum_<MORPHO_MERGE>(m, "MorphoMerge")
         .value("MAX", MORPHO_MERGE::MAX)
         .value("MIN", MORPHO_MERGE::MIN)

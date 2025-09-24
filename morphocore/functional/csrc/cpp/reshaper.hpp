@@ -1,6 +1,7 @@
 #pragma once
 #include <torch/torch.h>
 
+/// @brief Utility struct to handle and reshape input tensors to 4D for forward pass and convert it back.
 struct TensorInputDim
 {
     int64_t batch_size;
@@ -17,6 +18,7 @@ struct TensorInputDim
     torch::Tensor ToOriginalTensor(const torch::Tensor& input);
 };
 
+/// @brief Utility struct to handle and reshape weight tensors to 4D for forward pass and convert it back.
 struct TensorWeightDim
 {
     int64_t in_channels;

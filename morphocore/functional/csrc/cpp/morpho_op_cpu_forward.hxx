@@ -12,6 +12,7 @@
 #include "morpho_merge_policy.hpp"
 #include "morpho_op_policy.hpp"
 
+// TODO: Dispatch for the kernel sizes 3x3, 5x5, 7x7 for better performance
 /// @brief Dispatches to the most optimized forward morphological operation implementation based on kernel size.
 ///        Uses specialized templates for common kernel sizes (3x3, 5x5, 7x7) for better performance; falls back to generic implementation
 ///        otherwise.
@@ -46,7 +47,6 @@ auto morpho_operation_forward_cpu_dispatcher(torch::Tensor input, torch::Tensor 
 }
 
 // TODO: Handle the save_index case in backward pass and with multiple channels.
-
 /// @brief Perform the forward standard morphological operation on CPU.
 /// @tparam T Data type of tensor elements.
 /// @tparam op Morphological operation type (e.g., dilation, erosion).
@@ -58,7 +58,9 @@ auto morpho_operation_forward_cpu_dispatcher(torch::Tensor input, torch::Tensor 
 template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index>
 auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight)
 {
+    // Policy for choosing between erosion and dilation.
     using Policy = MorphoPolicyCPU<T, op>;
+    // Policy for merging between channels.
     using MergePolicy = MorphoMergePolicy<T, merge>;
 
     const auto input_shape = input.sizes();

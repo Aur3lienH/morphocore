@@ -10,8 +10,8 @@
     #include "../cuda/smorph.cuh"
 #endif
 
-/// @brief Forward pass of the Soft Morphological layer
-/// @tparam merge Merge strategy to use
+/// @brief Forward pass of the Soft Morphological layer (dispatcher between CPU and CUDA).
+/// @tparam merge Merge channel strategy to use.
 /// @param ctx Autograd context to save tensors for backward pass
 /// @param input Input tensor of shape (batch_size, in_channels, height, width)
 /// @param weight Weight tensor of shape (out_channels, in_channels, kernel_height, kernel_width)

@@ -2,6 +2,13 @@
 #include <torch/torch.h>
 #include "morpho_merge_policy.hpp"
 
+/// @brief Forward CPU pass for the smorph operation (Smooth approximation of erosion or dilation).
+/// @tparam T Data type (float or double).
+/// @tparam merge Merge channel policy.
+/// @param input Input tensor.
+/// @param weight Weight tensor.
+/// @param alpha Control parameter for choosing between dilation (alpha -> +inf) and erosion (alpha -> -inf).
+/// @return Output tensor.
 template <MORPHO_MERGE merge, typename T>
 auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
 {
@@ -30,7 +37,7 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
     const T* __restrict__ weight_ptr = weight_contig.template data_ptr<T>();
     T* __restrict__ output_ptr = output.template data_ptr<T>();
 
-    // Optimized strides for contiguous tensors
+
     const int64_t input_batch_stride = in_channels * height * width;
     const int64_t input_channel_stride = height * width;
     const int64_t weight_out_stride = in_channels * kernel_height * kernel_width;
@@ -43,7 +50,7 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
     const T abs_alpha = std::abs(alpha);
     const bool is_dilation_like = alpha >= 0;
 
-    // Smaller tiles for better cache utilization
+
     constexpr int64_t TILE_H = 16;
     constexpr int64_t TILE_W = 16;
 
@@ -77,14 +84,14 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
                                     const T* input_channel = input_batch + i * input_channel_stride;
                                     const T* weight_in = weight_out + i * weight_in_stride;
 
-                                    // Step 1: Find reference value for numerical stability (like in softmax)
+
                                     T reference_value = is_dilation_like ? 
                                         std::numeric_limits<T>::lowest() : 
                                         std::numeric_limits<T>::max();
                                     
                                     int64_t k = 0;
 
-                                    // Find reference value for stability
+
                                     for (int64_t kh = 0; kh < kernel_height; kh++)
                                     {
                                         const int64_t ph = h + kernel_height_half - kh;
@@ -112,12 +119,12 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
                                         }
                                     }
 
-                                    // Step 2: Compute alpha-softmax/softmin
+
                                     T sum = 0;
                                     T weighted_result = 0;
                                     k = 0;
 
-                                    // First pass: compute normalization sum
+
                                     for (int64_t kh = 0; kh < kernel_height; kh++)
                                     {
                                         const int64_t ph = h + kernel_height_half - kh;
@@ -133,7 +140,6 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
                                                 const T input_val = input_channel[ph * width + pw];
                                                 const T val = input_val + weight_in[k];
                                                 
-                                                // Alpha-soft weighting
                                                 const T exp_term = is_dilation_like ?
                                                     std::exp((val - reference_value) * abs_alpha) :
                                                     std::exp((reference_value - val) * abs_alpha);
@@ -142,7 +148,7 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
                                         }
                                     }
 
-                                    // Second pass: compute weighted result (alpha-softmax/softmin)
+
                                     k = 0;
                                     for (int64_t kh = 0; kh < kernel_height; kh++)
                                     {
@@ -159,14 +165,13 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
                                                 const T input_val = input_channel[ph * width + pw];
                                                 const T val = input_val + weight_in[k];
                                                 
-                                                // Alpha-soft weight
+
                                                 const T exp_term = is_dilation_like ?
                                                     std::exp((val - reference_value) * abs_alpha) :
                                                     std::exp((reference_value - val) * abs_alpha);
                                                 
                                                 const T soft_weight = exp_term / sum;
                                                 
-                                                // Accumulate weighted result
                                                 weighted_result += soft_weight * val;
                                             }
                                         }

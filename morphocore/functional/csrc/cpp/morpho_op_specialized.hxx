@@ -1,5 +1,16 @@
 #pragma once
 
+//TODO: Dispatch for the kernel sizes 3x3, 5x5, 7x7 for better performance
+// Not used yet
+/// @brief Perform the forward standard morphological operation on CPU using a specialized template for fixed kernel sizes (Optimizing for the compiler).
+/// @tparam op Morphological operation type (e.g., dilation, erosion).
+/// @tparam merge Merge channel policy.
+/// @tparam T Data type of tensor elements.
+/// @tparam save_index If true, saves the index of the maximal/minimal kernel position
+/// @tparam KERNEL_SIZE Fixed kernel size (must be odd and between 1 and 15).
+/// @param input Input tensor of shape [batch, channels, height, width].
+/// @param weight Morphological kernel tensor of shape [out_channels, in_channels, kernel_height, kernel_width] where kernel_height and kernel_width must equal KERNEL_SIZE.
+/// @return Output tensor, or tuple (output, indices) if save_index is true.
 template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index, int KERNEL_SIZE>
 auto morpho_operation_forward_cpu_template(torch::Tensor input, torch::Tensor weight)
 {

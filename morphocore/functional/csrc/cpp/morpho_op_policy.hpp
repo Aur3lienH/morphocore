@@ -3,6 +3,9 @@
 
 #include "morpho_op_enum.hpp"
 
+/// @brief Policy for morphological operations to differentiate between erosion and dilation.
+/// @tparam T Data type of tensor elements.
+/// @tparam op Morphological operation type (DILATION or EROSION).
 template <typename T, MORPHO_OPERATION op>
 struct MorphoPolicyCPU
 {
