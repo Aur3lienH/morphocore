@@ -51,7 +51,7 @@ build-wheels:
   - python3 -m venv .venv
   - source .venv/bin/activate
   - pip install --upgrade pip
-  - pip install build
+  - pip install build wheel setuptools
   script:
     - python -m build --wheel --no-isolation --outdir wheelhouse/
   artifacts:
