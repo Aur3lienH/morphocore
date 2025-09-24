@@ -3,22 +3,7 @@ import numpy as np
 import morphocore.functional as F
 import pytest
 from .utils import correct_morphology, dispatch_operation
-
-
-# Device parametrization fixture
-@pytest.fixture(params=['cpu', 'cuda'])
-def device(request):
-    if request.param == 'cuda' and not torch.cuda.is_available():
-        pytest.skip("CUDA not available")
-    return request.param
-
-
-# Operation parametrization fixture
-# Sdilation is testing Smorph with a large positive alpha (approximating dilation)
-# Serosion is the same but with a large negative alpha (approximating erosion)
-@pytest.fixture(params=['dilation', 'erosion', 'Sdilation', 'Serosion'])
-def operation(request):
-    return request.param
+from .conftest import device, operation
 
 class TestMorphologicalOperations:
 
@@ -261,14 +246,4 @@ class TestMorphologyBackward:
         assert result, f"Gradient check failed for morphological {operation}"
 
 
-class TestDilation(TestMorphologicalOperations):
-    @pytest.fixture
-    def operation(self):
-        return 'dilation'
-
-
-class TestErosion(TestMorphologicalOperations):
-    @pytest.fixture
-    def operation(self):
-        return 'erosion'
 

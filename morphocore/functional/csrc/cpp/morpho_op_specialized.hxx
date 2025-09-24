@@ -1,15 +1,17 @@
 #pragma once
 
-//TODO: Dispatch for the kernel sizes 3x3, 5x5, 7x7 for better performance
-// Not used yet
-/// @brief Perform the forward standard morphological operation on CPU using a specialized template for fixed kernel sizes (Optimizing for the compiler).
+// TODO: Dispatch for the kernel sizes 3x3, 5x5, 7x7 for better performance
+//  Not used yet
+/// @brief Perform the forward standard morphological operation on CPU using a specialized template for fixed kernel sizes (Optimizing for the
+/// compiler).
 /// @tparam op Morphological operation type (e.g., dilation, erosion).
 /// @tparam merge Merge channel policy.
 /// @tparam T Data type of tensor elements.
 /// @tparam save_index If true, saves the index of the maximal/minimal kernel position
 /// @tparam KERNEL_SIZE Fixed kernel size (must be odd and between 1 and 15).
 /// @param input Input tensor of shape [batch, channels, height, width].
-/// @param weight Morphological kernel tensor of shape [out_channels, in_channels, kernel_height, kernel_width] where kernel_height and kernel_width must equal KERNEL_SIZE.
+/// @param weight Morphological kernel tensor of shape [out_channels, in_channels, kernel_height, kernel_width] where kernel_height and kernel_width
+/// must equal KERNEL_SIZE.
 /// @return Output tensor, or tuple (output, indices) if save_index is true.
 template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index, int KERNEL_SIZE>
 auto morpho_operation_forward_cpu_template(torch::Tensor input, torch::Tensor weight)
@@ -71,7 +73,6 @@ auto morpho_operation_forward_cpu_template(torch::Tensor input, torch::Tensor we
                 {
                     const int64_t h_end = std::min(h_tile + TILE_H, height);
 
-                    // Pointeurs de base pré-calculés
                     const T* input_batch = input_ptr + b * input_batch_stride;
                     const T* weight_out = weight_ptr + o * weight_out_stride;
                     T* output_base = output_ptr + b * output_batch_stride + o * output_channel_stride;
@@ -113,13 +114,10 @@ auto morpho_operation_forward_cpu_template(torch::Tensor input, torch::Tensor we
                                             const int64_t pw = w + kernel_half - kw;
                                             const bool w_valid = (pw >= 0 && pw < width);
 
-                                            // Accès mémoire avec bounds checking optimisé
                                             const T input_val = (h_valid && w_valid) ? input_channel[ph * width + pw] : PADDING_VAL;
 
-                                            // Opérations directes - pas d'appels de fonction
                                             const T val = (op == MORPHO_OPERATION::DILATION) ? input_val + weight_in[k] : input_val - weight_in[k];
 
-                                            // Comparaison directe - pas d'appels de fonction
                                             const bool is_better = (op == MORPHO_OPERATION::DILATION) ? (val > best_value) : (val < best_value);
 
                                             if (is_better)

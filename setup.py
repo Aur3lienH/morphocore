@@ -14,7 +14,7 @@ cpp_sources = [os.path.join(path_to_cpp, file) for file in cpp_files]
 cuda_sources = [os.path.join(path_to_cuda, file) for file in cuda_files]
 
 # Détection automatique de CUDA
-with_cuda = os.environ.get('MORPHO_WITH_CUDA', '1') == '1' and torch.cuda.is_available()
+with_cuda = os.environ.get('MORPHO_WITH_CUDA', '1') == '1'
 
 if sys.platform.startswith('linux'):
     cxx_flags = ['-O3', '-DNDEBUG', '-std=c++17', '-ffast-math', '-fopenmp', '-Wno-unused-variable']

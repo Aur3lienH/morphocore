@@ -131,6 +131,7 @@ INSTANTIATE_MORPHO_FORWARD_KERNEL(MORPHO_OPERATION::EROSION, double)
         const TYPE* padded_input, const TYPE* weight, TYPE* grad_input, TYPE* grad_weight, const TYPE* grad_output, const int64_t* max_indexes,      \
         int batch_size, int in_channels, int out_channels, int height, int width, int padded_height, int padded_width, int kernel_height,            \
         int kernel_width);
+
 INSTANTIATE_MORPHO_BACKWARD_KERNEL(MORPHO_OPERATION::DILATION, float)
 INSTANTIATE_MORPHO_BACKWARD_KERNEL(MORPHO_OPERATION::DILATION, double)
 INSTANTIATE_MORPHO_BACKWARD_KERNEL(MORPHO_OPERATION::EROSION, float)

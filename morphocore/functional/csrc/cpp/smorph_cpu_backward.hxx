@@ -58,13 +58,11 @@ void smorph_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
             const T grad_out = grad_output_base[h * width + w] * scale_factor;
             if (grad_out == static_cast<T>(0)) continue;
 
-            // Process each input channel separately
             for (int64_t i = 0; i < in_channels; i++)
             {
                 const T* input_channel = input_ptr + b * input_batch_stride + i * input_channel_stride;
                 const T* weight_in = weight_ptr + o * weight_out_stride + i * weight_in_stride;
 
-                // Step 1: Find reference value and collect valid positions
                 T reference_value = is_dilation_like ? 
                     std::numeric_limits<T>::lowest() : 
                     std::numeric_limits<T>::max();
@@ -73,7 +71,6 @@ void smorph_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
                 std::vector<bool> valid_positions(kernel_height * kernel_width, false);
                 int64_t k = 0;
 
-                // Find reference value across kernel
                 for (int64_t kh = 0; kh < kernel_height; kh++)
                 {
                     const int64_t ph = h + kernel_height_half - kh;
@@ -102,11 +99,9 @@ void smorph_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
                     }
                 }
 
-                // Step 2: Compute soft weights and SMorph output
                 T sum = static_cast<T>(0);
                 std::vector<T> soft_weights(kernel_height * kernel_width, static_cast<T>(0));
                 
-                // Compute normalization sum
                 for (k = 0; k < kernel_height * kernel_width; k++)
                 {
                     if (valid_positions[k])
@@ -119,7 +114,6 @@ void smorph_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
                     }
                 }
 
-                // Normalize weights and compute SMorph output
                 T smorph_output = static_cast<T>(0);
                 for (k = 0; k < kernel_height * kernel_width; k++)
                 {
@@ -130,7 +124,6 @@ void smorph_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
                     }
                 }
 
-                // Step 3: Compute gradients using SMorph derivative formulas
                 k = 0;
                 for (int64_t kh = 0; kh < kernel_height; kh++)
                 {
@@ -144,22 +137,18 @@ void smorph_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
 
                         if (h_valid && w_valid)
                         {
-                            const T p = soft_weights[k];  // Probability/weight
-                            const T val = vals[k];       // input + weight
+                            const T p = soft_weights[k]; 
+                            const T val = vals[k];
 
-                            // SMorph gradient formula: grad_val = p + α * p * (val - output)
                             const T grad_val = p + alpha * p * (val - smorph_output);
                             const T final_grad = grad_val * grad_out;
 
-                            // Accumulate input gradient
                             const int64_t input_idx = b * input_batch_stride + i * input_channel_stride + ph * width + pw;
                             local_grad_input_ptr[input_idx] += final_grad;
 
-                            // Accumulate weight gradient
                             const int64_t weight_idx = o * weight_out_stride + i * weight_in_stride + kh * kernel_width + kw;
                             local_grad_weight_ptr[weight_idx] += final_grad;
 
-                            // Accumulate alpha gradient: ∂output/∂α = p * val * (val - output)
                             local_alpha_grad += p * val * (val - smorph_output) * grad_out;
                         }
                     }
@@ -217,7 +206,6 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
             const T grad_out = grad_output_base[h * width + w];
             if (grad_out == static_cast<T>(0)) continue;
 
-            // Step 1: Recompute all channel outputs to find winner(s)
             std::vector<T> channel_outputs(in_channels);
             std::vector<std::vector<T>> channel_vals(in_channels);
             std::vector<std::vector<T>> channel_soft_weights(in_channels);
@@ -227,7 +215,6 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
                 const T* input_channel = input_ptr + b * input_batch_stride + i * input_channel_stride;
                 const T* weight_in = weight_ptr + o * weight_out_stride + i * weight_in_stride;
 
-                // Find reference value for this channel
                 T reference_value = is_dilation_like ? 
                     std::numeric_limits<T>::lowest() : 
                     std::numeric_limits<T>::max();
@@ -264,7 +251,6 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
                     }
                 }
 
-                // Compute soft weights for this channel
                 T sum = static_cast<T>(0);
                 channel_soft_weights[i].resize(kernel_height * kernel_width, static_cast<T>(0));
                 
@@ -280,7 +266,6 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
                     }
                 }
 
-                // Normalize and compute channel output
                 channel_outputs[i] = static_cast<T>(0);
                 for (k = 0; k < kernel_height * kernel_width; k++)
                 {
@@ -292,18 +277,16 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
                 }
             }
 
-            // Step 2: Find winning channel(s)
             T target_value;
             if constexpr (merge == MORPHO_MERGE::MAX)
             {
                 target_value = *std::max_element(channel_outputs.begin(), channel_outputs.end());
             }
-            else // MIN
+            else
             {
                 target_value = *std::min_element(channel_outputs.begin(), channel_outputs.end());
             }
             
-            // Count winners for gradient splitting
             int64_t winner_count = 0;
             const T tolerance = static_cast<T>(1e-7);
             for (const T& val : channel_outputs)
@@ -313,12 +296,10 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
             
             const T winner_grad = grad_out / static_cast<T>(winner_count);
 
-            // Step 3: Backprop only through winning channels
             for (int64_t i = 0; i < in_channels; i++)
             {
                 if (std::abs(channel_outputs[i] - target_value) < tolerance)
                 {
-                    // This channel won - compute its gradients
                     const T smorph_output = channel_outputs[i];
                     int64_t k = 0;
                     
@@ -337,18 +318,15 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
                                 const T p = channel_soft_weights[i][k];
                                 const T val = channel_vals[i][k];
 
-                                // SMorph gradient formula
                                 const T grad_val = p + alpha * p * (val - smorph_output);
                                 const T final_grad = grad_val * winner_grad;
 
-                                // Accumulate gradients
                                 const int64_t input_idx = b * input_batch_stride + i * input_channel_stride + ph * width + pw;
                                 local_grad_input_ptr[input_idx] += final_grad;
 
                                 const int64_t weight_idx = o * weight_out_stride + i * weight_in_stride + kh * kernel_width + kw;
                                 local_grad_weight_ptr[weight_idx] += final_grad;
 
-                                // Alpha gradient
                                 local_alpha_grad += p * val * (val - smorph_output) * winner_grad;
                             }
                         }
@@ -459,13 +437,11 @@ void smorph_backward_cpu(torch::Tensor input, torch::Tensor weight, T alpha, tor
         }
     }
 
-    // Parallel reduction of thread-local results
     T* __restrict__ grad_input_ptr = grad_input.template data_ptr<T>();
     T* __restrict__ grad_weight_ptr = grad_weight.template data_ptr<T>();
 
 #pragma omp parallel
     {
-        // Reduce grad_input
 #pragma omp for
         for (int64_t i = 0; i < grad_input.numel(); i++)
         {
@@ -477,7 +453,6 @@ void smorph_backward_cpu(torch::Tensor input, torch::Tensor weight, T alpha, tor
             grad_input_ptr[i] = sum;
         }
 
-        // Reduce grad_weight  
 #pragma omp for
         for (int64_t i = 0; i < grad_weight.numel(); i++)
         {
@@ -489,7 +464,6 @@ void smorph_backward_cpu(torch::Tensor input, torch::Tensor weight, T alpha, tor
             grad_weight_ptr[i] = sum;
         }
 
-        // Reduce alpha gradient (single thread)
 #pragma omp single
         {
             for (const T& local_alpha_grad : local_alpha_grads)

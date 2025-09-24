@@ -28,21 +28,17 @@ __global__ void morpho_operation_backward_sum_avg_kernel(const scalar_t* input, 
 
         if (grad_val == static_cast<scalar_t>(0)) continue;
 
-        // For sum/average, we need to scale the gradient appropriately
         const scalar_t scaled_grad = (merge == MORPHO_MERGE::AVERAGE) ? grad_val / static_cast<scalar_t>(in_channels) : grad_val;
 
-        // Process each input channel independently
         for (int c = 0; c < in_channels; c++)
         {
             const scalar_t* input_channel = input + b * in_channels * height * width + c * height * width;
             const scalar_t* weight_base = weight + o * in_channels * kernel_height * kernel_width + c * kernel_height * kernel_width;
 
-            // Find the best kernel position for this channel according to morphological operation
             scalar_t best_value = Policy::initial_value();
             int best_kh = -1;
             int best_kw = -1;
 
-            // Find the best kernel position for this channel
             for (int kh = 0; kh < kernel_height; kh++)
             {
                 for (int kw = 0; kw < kernel_width; kw++)
@@ -66,7 +62,6 @@ __global__ void morpho_operation_backward_sum_avg_kernel(const scalar_t* input, 
                 }
             }
 
-            // Accumulate gradients for input
             const int ih = h + kernel_height_half - best_kh;
             const int iw = w + kernel_width_half - best_kw;
 
@@ -76,7 +71,6 @@ __global__ void morpho_operation_backward_sum_avg_kernel(const scalar_t* input, 
                 atomicAdd(&grad_input[grad_input_idx], scaled_grad);
             }
 
-            // Accumulate gradients for weight
             const int grad_weight_idx =
                 o * in_channels * kernel_height * kernel_width + c * kernel_height * kernel_width + best_kh * kernel_width + best_kw;
 
@@ -84,7 +78,7 @@ __global__ void morpho_operation_backward_sum_avg_kernel(const scalar_t* input, 
             {
                 atomicAdd(&grad_weight[grad_weight_idx], scaled_grad);
             }
-            else  // EROSION
+            else
             {
                 atomicAdd(&grad_weight[grad_weight_idx], -scaled_grad);
             }
@@ -123,13 +117,11 @@ __global__ void morpho_operation_backward_min_max_kernel(const scalar_t* input, 
         int best_kw = -1;
         int best_channel = -1;
 
-        // Find the single best value across ALL channels and kernel positions
         for (int c = 0; c < in_channels; c++)
         {
             const scalar_t* input_channel = input + b * in_channels * height * width + c * height * width;
             const scalar_t* weight_base = weight + o * in_channels * kernel_height * kernel_width + c * kernel_height * kernel_width;
 
-            // Find the best value for this channel according to morphological operation
             scalar_t best_channel_value = Policy::initial_value();
             int channel_best_kh = -1;
             int channel_best_kw = -1;
@@ -148,7 +140,6 @@ __global__ void morpho_operation_backward_min_max_kernel(const scalar_t* input, 
 
                     const scalar_t val = Policy::combine(input_val, weight_base[kh * KW + kw]);
 
-                    // Use morphological policy to find best for this channel
                     if (Policy::is_better(val, best_channel_value))
                     {
                         best_channel_value = val;
@@ -158,7 +149,6 @@ __global__ void morpho_operation_backward_min_max_kernel(const scalar_t* input, 
                 }
             }
 
-            // Now use merge policy to compare this channel's best value with others
             if constexpr (merge == MORPHO_MERGE::MAX)
             {
                 if (best_channel_value > best_merge_value)
@@ -181,7 +171,6 @@ __global__ void morpho_operation_backward_min_max_kernel(const scalar_t* input, 
             }
         }
 
-        // Only the single best channel gets the gradient
         const int ih = h + kernel_height_half - best_kh;
         const int iw = w + kernel_width_half - best_kw;
 
@@ -191,7 +180,6 @@ __global__ void morpho_operation_backward_min_max_kernel(const scalar_t* input, 
             atomicAdd(&grad_input[grad_input_idx], grad_val);
         }
 
-        // Accumulate gradients for weight (only for the best channel)
         const int grad_weight_idx =
             o * in_channels * kernel_height * kernel_width + best_channel * kernel_height * kernel_width + best_kh * kernel_width + best_kw;
 
@@ -199,7 +187,7 @@ __global__ void morpho_operation_backward_min_max_kernel(const scalar_t* input, 
         {
             atomicAdd(&grad_weight[grad_weight_idx], grad_val);
         }
-        else  // EROSION
+        else
         {
             atomicAdd(&grad_weight[grad_weight_idx], -grad_val);
         }
@@ -217,7 +205,7 @@ void morpho_operation_backward(const scalar_t* input, const scalar_t* weight, sc
         morpho_operation_backward_sum_avg_kernel<Op, merge, scalar_t><<<blocks, threads>>>(
             input, weight, grad_input, grad_weight, grad_output, batch_size, in_channels, out_channels, height, width, kernel_height, kernel_width);
     }
-    else  // MIN or MAX
+    else
     {
         morpho_operation_backward_min_max_kernel<Op, merge, scalar_t><<<blocks, threads>>>(
             input, weight, grad_input, grad_weight, grad_output, batch_size, in_channels, out_channels, height, width, kernel_height, kernel_width);
