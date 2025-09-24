@@ -97,7 +97,7 @@ import morphocore.nn as Mnn
 dilation_layer = Mnn.Dilation(
     in_channels=3, 
     out_channels=16, 
-    kernel_size=3, 
+    kernel_size=(3, 3), 
     channel_merge_mode="sum"
 )
 output = dilation_layer(input_tensor)
@@ -110,7 +110,7 @@ Learnable erosion layer for neural networks.
 erosion_layer = Mnn.Erosion(
     in_channels=3, 
     out_channels=16, 
-    kernel_size=5, 
+    kernel_size=(5, 5), 
     channel_merge_mode="mean"
 )
 output = erosion_layer(input_tensor)
@@ -123,7 +123,7 @@ Smooth morphological layer using softmax approximation.
 smorph_layer = Mnn.Smorph(
     in_channels=3, 
     out_channels=8, 
-    kernel_size=3, 
+    kernel_size=(3, 3), 
     channel_merge_mode="sum",
     alpha=2.0
 )
