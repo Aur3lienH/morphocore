@@ -297,7 +297,7 @@ torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, 
         const int tid = omp_get_thread_num();
         T* __restrict__ local_grad_input_ptr = local_grad_inputs[tid].template data_ptr<T>();
         T* __restrict__ local_grad_weight_ptr = local_grad_weights[tid].template data_ptr<T>();
-
+        #pragma omp for collapse(2)
         for (int64_t b = 0; b < batch_size; b++)
         {
             for (int64_t o = 0; o < out_channels; o++)
@@ -344,11 +344,8 @@ torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, 
             {
                 sum += local_tensor.template data_ptr<T>()[i];
             }
-            local_grad_weights[0].template data_ptr<T>()[i] = sum;
+            grad_weight.template data_ptr<T>()[i] = sum;
         }
     }
-
-    grad_weight = local_grad_weights[0];
-
     return {grad_input, grad_weight};
 }

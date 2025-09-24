@@ -26,5 +26,10 @@
         "functional": "cpp",
         "utility": "cpp",
         "type_traits": "cpp"
-    }
+    },
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true
 }
