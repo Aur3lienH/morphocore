@@ -20,7 +20,7 @@ test:
     - python -m venv .venv
     - source .venv/bin/activate
     - pip install --upgrade pip
-    - pip install pytest torch numpy
+    - pip install pytest torch numpy pytest-benchmark
     - pip install -e .  
   script:
     - pytest tests/ -v -k "cpu" --junitxml=junit.xml  
