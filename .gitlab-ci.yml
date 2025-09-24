@@ -13,7 +13,7 @@ cache:
 
 test:
   stage: test
-  image: nvidia/cuda:12.2-devel-ubuntu22.04
+  image: nvidia/cuda:12.1-devel-ubuntu22.04
   services:
     - docker:dind
   before_script:
@@ -38,7 +38,7 @@ test:
 
 build-wheels:
   stage: build
-  image: nvidia/cuda:12.2-devel-ubuntu22.04
+  image: nvidia/cuda:12.1-devel-ubuntu22.04
   services:
     - docker:dind
   variables:
