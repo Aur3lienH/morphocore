@@ -46,8 +46,6 @@ build:
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
     - apt-get update && apt-get install -y docker.io
-    - python3 -m venv .venv
-    - source .venv/bin/activate
     - pip install --upgrade pip cibuildwheel
   script:
     - cibuildwheel --output-dir wheelhouse --platform linux
