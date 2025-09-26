@@ -40,7 +40,8 @@ build:
   stage: build
   image: python:3.11
   services:
-    - docker:dind
+    - name: docker:dind
+      command: ["--dns=8.8.8.8", "--dns=1.1.1.1"]
   variables:
     DOCKER_DRIVER: overlay2
     DOCKER_TLS_CERTDIR: "/certs"
