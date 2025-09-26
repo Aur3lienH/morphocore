@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "wheel", "torch"]
+requires = ["setuptools>=61.0.0", "wheel", "torch"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,7 @@ version = "0.0.1"
 description = "Morphological operations with CUDA acceleration"
 readme = "README.md"
 authors = [{name = "Aurelien HURAND", email = "aurelien.hurand@gmail.com"}]
-license = "MIT"  # SPDX expression simple
+license = {text = "MIT"} 
 requires-python = ">=3.8"
 
 keywords = ["morphology", "cuda", "pytorch", "computer-vision"]
@@ -52,23 +52,20 @@ exclude = [
 ]
 # Configuration cibuildwheel (reste identique)
 [tool.cibuildwheel]
+build-verbosity = 3
 build = "cp38-* cp39-* cp310-* cp311-* cp312-*"
-skip = "*-win32 *-manylinux_i686 pp*"
-
-[[tool.cibuildwheel.overrides]]
-select = "*linux*"
-environment = { MORPHO_FORCE_CUDA="1", CUDA_HOME="/usr/local/cuda-12.0" }
+skip = "*-win32 *-manylinux_i686"
+environment = { MORPHO_WITH_CUDA="0"}
 
 [tool.cibuildwheel.linux]
 before-all = [
-    "yum install -y epel-release", 
+    "pip install setuptools",
+    "yum install -y gcc gcc-c++",
+    "yum install -y epel-release",
     "yum install -y wget",
-    "./scripts/install_cuda_linux.sh"
 ]
-repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"
 
-[tool.cibuildwheel.macos]
-environment = { MORPHO_DISABLE_CUDA="1" }
+repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel} --exclude libtorch_cpu.so --exclude libc10.so --exclude libtorch.so --exclude libtorch_python.so --exclude libtorch_cuda.so"
 
-[tool.cibuildwheel.windows]
-environment = { MORPHO_DISABLE_CUDA="1" }
+
+
