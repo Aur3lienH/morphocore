@@ -16,8 +16,15 @@ public:
     static torch::Tensor forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight);
 
     static torch::autograd::tensor_list backward(torch::autograd::AutogradContext* ctx, torch::autograd::tensor_list grad_outputs);
-};
 
+    static std::string name()
+    {
+        if (op == MORPHO_OPERATION::DILATION)
+            return "Dilation";
+        else
+            return "Erosion";
+    }
+};
 
 template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index>
 auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight);

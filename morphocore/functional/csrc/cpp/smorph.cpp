@@ -100,7 +100,6 @@ template <MORPHO_MERGE merge>
 torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradContext* ctx, torch::autograd::tensor_list grad_outputs)
 {
 
-    
     auto saved = ctx->get_saved_variables();
     auto output = saved[0];
     auto values = saved[1];
@@ -176,19 +175,14 @@ torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradCo
     return {torch::Tensor(), torch::Tensor(), torch::Tensor()};
 }
 
-
-
 template class Smorph<MORPHO_MERGE::MIN>;
 template class Smorph<MORPHO_MERGE::MAX>;
 template class Smorph<MORPHO_MERGE::AVERAGE>;
 template class Smorph<MORPHO_MERGE::ADD>;
 
-
-
 // ----------------------------------SMORPH FORWARD PASS CPU----------------------------------------
 
-#define INSTANTIATE_SMORPH_FORWARD(MERGE, TYPE)                                                     \
-    template auto smorph_forward_cpu<MORPHO_MERGE::MERGE, TYPE>(torch::Tensor, torch::Tensor, TYPE); 
+#define INSTANTIATE_SMORPH_FORWARD(MERGE, TYPE) template auto smorph_forward_cpu<MORPHO_MERGE::MERGE, TYPE>(torch::Tensor, torch::Tensor, TYPE);
 
 INSTANTIATE_SMORPH_FORWARD(MIN, float)
 INSTANTIATE_SMORPH_FORWARD(MAX, float)
@@ -203,12 +197,9 @@ INSTANTIATE_SMORPH_FORWARD(ADD, double)
 
 // ----------------------------------SMORPH BACKWARD PASS CPU----------------------------------------
 
-
-
-#define INSTANTIATE_SMORPH_BACKWARD(MERGE, TYPE)                                                    \
-    template void smorph_backward_cpu<MORPHO_MERGE::MERGE, TYPE>(torch::Tensor, torch::Tensor,      \
-                                                                TYPE, torch::Tensor, torch::Tensor, \
-                                                                torch::Tensor, torch::Tensor);
+#define INSTANTIATE_SMORPH_BACKWARD(MERGE, TYPE)                                                                                                     \
+    template void smorph_backward_cpu<MORPHO_MERGE::MERGE, TYPE>(torch::Tensor, torch::Tensor, TYPE, torch::Tensor, torch::Tensor, torch::Tensor,    \
+                                                                 torch::Tensor);
 
 INSTANTIATE_SMORPH_BACKWARD(MIN, float)
 INSTANTIATE_SMORPH_BACKWARD(MAX, float)
