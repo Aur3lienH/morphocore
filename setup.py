@@ -40,15 +40,17 @@ if with_cuda:
             '-O3',
             '--use_fast_math',
             '-std=c++17',
-            '-gencode=arch=compute_75,code=sm_75',
-            '-gencode=arch=compute_80,code=sm_80',
-            '-gencode=arch=compute_86,code=sm_86',
-            '-gencode=arch=compute_89,code=sm_89',
-            '-gencode=arch=compute_120,code=sm_120',
+            '-gencode=arch=compute_61,code=sm_61',     # Pascal: GTX 10XX
+            '-gencode=arch=compute_70,code=sm_70',     # Volta: V100
+            '-gencode=arch=compute_75,code=sm_75',     # Turing: RTX 20XX
+            '-gencode=arch=compute_80,code=sm_80',     # Ampere: A100
+            '-gencode=arch=compute_86,code=sm_86',     # Ampere: RTX 30XX
+            '-gencode=arch=compute_89,code=sm_89',     # Ada: RTX 40XX
+            '-gencode=arch=compute_90,code=sm_90',     # Hopper: H100
+            '-gencode=arch=compute_89,code=compute_89', # PTX for RTX 50XX+ forward compat
             '--maxrregcount=96',
             '-Xcompiler=-O3',
-            '-Xcompiler=-fopenmp',
-            '-Wunused-but-set-variable'
+            '-Xcompiler=-fopenmp'
         ]
     }
 else:

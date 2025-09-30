@@ -33,7 +33,7 @@ void morpho_forward_kernel(const scalar_t* input, const scalar_t* weight, scalar
     //         <<<blocks, threads, shared_memory_size>>>(input, weight, output, max_indexes, batch_size, in_channels, out_channels, height, width);
     //     return;
     // }
-    morpho_operation_forward_kernel<Op, merge, scalar_t, -1, -1><<<blocks, threads, shared_memory_size>>>(
+    morpho_operation_forward_kernel<Op, merge, scalar_t><<<blocks, threads, shared_memory_size>>>(
         input, weight, output, max_indexes, batch_size, in_channels, out_channels, height, width, kernel_height, kernel_width);
 }
 
@@ -65,9 +65,8 @@ void morpho_backward_kernel(const scalar_t* padded_input, const scalar_t* weight
     //         padded_input, weight, grad_input, grad_weight, grad_output, max_indexes, batch_size, in_channels, out_channels, height, width);
     //     return;
     // }
-    morpho_operation_backward_kernel<Op, merge, scalar_t, -1, -1>
-        <<<blocks, threads, shared_memory_size>>>(padded_input, weight, grad_input, grad_weight, grad_output, max_indexes, batch_size, in_channels,
-                                                  out_channels, height, width, kernel_height, kernel_width);
+    morpho_operation_backward_kernel<Op, merge, scalar_t>(padded_input, weight, grad_input, grad_weight, grad_output, batch_size, in_channels,
+                                                          out_channels, height, width, kernel_height, kernel_width, blocks, threads);
 }
 
 #define INSTANTIATE_MORPHO_OP(T, H, W, OP)                                                                                                           \

@@ -60,8 +60,6 @@ auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight)
 {
     // Policy for choosing between erosion and dilation.
     using Policy = MorphoPolicyCPU<T, op>;
-    // Policy for merging between channels.
-    using MergePolicy = MorphoMergePolicy<T, merge>;
 
     const auto input_shape = input.sizes();
     const auto weight_shape = weight.sizes();

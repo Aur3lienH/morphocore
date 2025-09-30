@@ -43,7 +43,6 @@ void morpho_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
                              int64_t grad_output_batch_stride, int64_t grad_output_channel_stride)
 {
     using Policy = MorphoPolicyCPU<T, op>;
-    using MergePolicy = MorphoMergePolicy<T, merge>;
 
     const T* grad_output_base = grad_output_ptr + b * grad_output_batch_stride + o * grad_output_channel_stride;
 
@@ -149,8 +148,6 @@ void morpho_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
 
     // Policy for choosing between erosion and dilation.
     using Policy = MorphoPolicyCPU<T, op>;
-    // Policy for merging between channels.
-    using MergePolicy = MorphoMergePolicy<T, merge>;
 
     const T* grad_output_base = grad_output_ptr + b * grad_output_batch_stride + o * grad_output_channel_stride;
 
@@ -232,10 +229,6 @@ template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index>
 torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, torch::Tensor weight, torch::Tensor grad_output,
                                                            torch::Tensor max_indices)
 {
-    // Policy for choosing between erosion and dilation.
-    using Policy = MorphoPolicyCPU<T, op>;
-    // Policy for merging between channels.
-    using MergePolicy = MorphoMergePolicy<T, merge>;
     const auto input_shape = input.sizes();
     const auto weight_shape = weight.sizes();
 
@@ -301,7 +294,7 @@ torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, 
         const int tid = omp_get_thread_num();
         T* __restrict__ local_grad_input_ptr = local_grad_inputs[tid].template data_ptr<T>();
         T* __restrict__ local_grad_weight_ptr = local_grad_weights[tid].template data_ptr<T>();
-        #pragma omp for collapse(2)
+#pragma omp for collapse(2)
         for (int64_t b = 0; b < batch_size; b++)
         {
             for (int64_t o = 0; o < out_channels; o++)

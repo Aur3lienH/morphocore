@@ -12,8 +12,6 @@
 template <MORPHO_MERGE merge, typename T>
 auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
 {
-    using MergePolicy = MorphoMergePolicy<T, merge>;
-
     const auto input_shape = input.sizes();
     const auto weight_shape = weight.sizes();
     const int64_t kernel_height = weight_shape[2];
@@ -37,7 +35,6 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
     const T* __restrict__ weight_ptr = weight_contig.template data_ptr<T>();
     T* __restrict__ output_ptr = output.template data_ptr<T>();
 
-
     const int64_t input_batch_stride = in_channels * height * width;
     const int64_t input_channel_stride = height * width;
     const int64_t weight_out_stride = in_channels * kernel_height * kernel_width;
@@ -45,11 +42,8 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
     const int64_t output_batch_stride = out_channels * height * width;
     const int64_t output_channel_stride = height * width;
 
-
-
     const T abs_alpha = std::abs(alpha);
     const bool is_dilation_like = alpha >= 0;
-
 
     constexpr int64_t TILE_H = 16;
     constexpr int64_t TILE_W = 16;
@@ -84,13 +78,9 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
                                     const T* input_channel = input_batch + i * input_channel_stride;
                                     const T* weight_in = weight_out + i * weight_in_stride;
 
+                                    T reference_value = is_dilation_like ? std::numeric_limits<T>::lowest() : std::numeric_limits<T>::max();
 
-                                    T reference_value = is_dilation_like ? 
-                                        std::numeric_limits<T>::lowest() : 
-                                        std::numeric_limits<T>::max();
-                                    
                                     int64_t k = 0;
-
 
                                     for (int64_t kh = 0; kh < kernel_height; kh++)
                                     {
@@ -119,11 +109,9 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
                                         }
                                     }
 
-
                                     T sum = 0;
                                     T weighted_result = 0;
                                     k = 0;
-
 
                                     for (int64_t kh = 0; kh < kernel_height; kh++)
                                     {
@@ -139,16 +127,14 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
                                             {
                                                 const T input_val = input_channel[ph * width + pw];
                                                 const T val = input_val + weight_in[k];
-                                                
-                                                const T exp_term = is_dilation_like ?
-                                                    std::exp((val - reference_value) * abs_alpha) :
-                                                    std::exp((reference_value - val) * abs_alpha);
+
+                                                const T exp_term = is_dilation_like ? std::exp((val - reference_value) * abs_alpha)
+                                                                                    : std::exp((reference_value - val) * abs_alpha);
                                                 sum += exp_term;
                                             }
                                         }
                                     }
 
-
                                     k = 0;
                                     for (int64_t kh = 0; kh < kernel_height; kh++)
                                     {
@@ -164,14 +150,12 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
                                             {
                                                 const T input_val = input_channel[ph * width + pw];
                                                 const T val = input_val + weight_in[k];
-                                                
 
-                                                const T exp_term = is_dilation_like ?
-                                                    std::exp((val - reference_value) * abs_alpha) :
-                                                    std::exp((reference_value - val) * abs_alpha);
-                                                
+                                                const T exp_term = is_dilation_like ? std::exp((val - reference_value) * abs_alpha)
+                                                                                    : std::exp((reference_value - val) * abs_alpha);
+
                                                 const T soft_weight = exp_term / sum;
-                                                
+
                                                 weighted_result += soft_weight * val;
                                             }
                                         }

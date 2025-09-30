@@ -32,24 +32,20 @@
 /// @param grad_output_batch_stride The stride of the gradient output tensor in the batch dimension.
 /// @param grad_output_channel_stride The stride of the gradient output tensor in the channel dimension.
 template <MORPHO_MERGE merge, typename T>
-void smorph_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t height, int64_t width, 
-                            int64_t kernel_height, int64_t kernel_width, int64_t kernel_height_half, 
-                            int64_t kernel_width_half, T alpha, const T* __restrict__ input_ptr, 
-                            const T* __restrict__ weight_ptr, const T* __restrict__ grad_output_ptr, 
-                            T* __restrict__ local_grad_input_ptr, T* __restrict__ local_grad_weight_ptr, 
-                            T& local_alpha_grad, int64_t input_batch_stride, int64_t input_channel_stride, 
-                            int64_t weight_out_stride, int64_t weight_in_stride, int64_t grad_output_batch_stride, 
-                            int64_t grad_output_channel_stride)
+void smorph_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t height, int64_t width, int64_t kernel_height, int64_t kernel_width,
+                             int64_t kernel_height_half, int64_t kernel_width_half, T alpha, const T* __restrict__ input_ptr,
+                             const T* __restrict__ weight_ptr, const T* __restrict__ grad_output_ptr, T* __restrict__ local_grad_input_ptr,
+                             T* __restrict__ local_grad_weight_ptr, T& local_alpha_grad, int64_t input_batch_stride, int64_t input_channel_stride,
+                             int64_t weight_out_stride, int64_t weight_in_stride, int64_t grad_output_batch_stride,
+                             int64_t grad_output_channel_stride)
 {
-    using MergePolicy = MorphoMergePolicy<T, merge>;
-    
+
     const T* grad_output_base = grad_output_ptr + b * grad_output_batch_stride + o * grad_output_channel_stride;
     const T abs_alpha = std::abs(alpha);
     const bool is_dilation_like = alpha >= 0;
-    
+
     // Scale factor for averaging
-    const T scale_factor = (merge == MORPHO_MERGE::AVERAGE) ? 
-        static_cast<T>(1.0) / in_channels : static_cast<T>(1.0);
+    const T scale_factor = (merge == MORPHO_MERGE::AVERAGE) ? static_cast<T>(1.0) / in_channels : static_cast<T>(1.0);
 
     for (int64_t h = 0; h < height; h++)
     {
@@ -63,10 +59,8 @@ void smorph_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
                 const T* input_channel = input_ptr + b * input_batch_stride + i * input_channel_stride;
                 const T* weight_in = weight_ptr + o * weight_out_stride + i * weight_in_stride;
 
-                T reference_value = is_dilation_like ? 
-                    std::numeric_limits<T>::lowest() : 
-                    std::numeric_limits<T>::max();
-                
+                T reference_value = is_dilation_like ? std::numeric_limits<T>::lowest() : std::numeric_limits<T>::max();
+
                 std::vector<T> vals(kernel_height * kernel_width);
                 std::vector<bool> valid_positions(kernel_height * kernel_width, false);
                 int64_t k = 0;
@@ -101,14 +95,13 @@ void smorph_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
 
                 T sum = static_cast<T>(0);
                 std::vector<T> soft_weights(kernel_height * kernel_width, static_cast<T>(0));
-                
+
                 for (k = 0; k < kernel_height * kernel_width; k++)
                 {
                     if (valid_positions[k])
                     {
-                        const T exp_term = is_dilation_like ?
-                            std::exp((vals[k] - reference_value) * abs_alpha) :
-                            std::exp((reference_value - vals[k]) * abs_alpha);
+                        const T exp_term =
+                            is_dilation_like ? std::exp((vals[k] - reference_value) * abs_alpha) : std::exp((reference_value - vals[k]) * abs_alpha);
                         soft_weights[k] = exp_term;
                         sum += exp_term;
                     }
@@ -137,7 +130,7 @@ void smorph_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
 
                         if (h_valid && w_valid)
                         {
-                            const T p = soft_weights[k]; 
+                            const T p = soft_weights[k];
                             const T val = vals[k];
 
                             const T grad_val = p + alpha * p * (val - smorph_output);
@@ -184,17 +177,13 @@ void smorph_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
 /// @param grad_output_batch_stride The stride of the gradient output tensor in the batch dimension.
 /// @param grad_output_channel_stride The stride of the gradient output tensor in the channel dimension.
 template <MORPHO_MERGE merge, typename T>
-void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t height, int64_t width, 
-                            int64_t kernel_height, int64_t kernel_width, int64_t kernel_height_half, 
-                            int64_t kernel_width_half, T alpha, const T* __restrict__ input_ptr, 
-                            const T* __restrict__ weight_ptr, const T* __restrict__ grad_output_ptr, 
-                            T* __restrict__ local_grad_input_ptr, T* __restrict__ local_grad_weight_ptr, 
-                            T& local_alpha_grad, int64_t input_batch_stride, int64_t input_channel_stride, 
-                            int64_t weight_out_stride, int64_t weight_in_stride, int64_t grad_output_batch_stride, 
-                            int64_t grad_output_channel_stride)
+void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t height, int64_t width, int64_t kernel_height, int64_t kernel_width,
+                             int64_t kernel_height_half, int64_t kernel_width_half, T alpha, const T* __restrict__ input_ptr,
+                             const T* __restrict__ weight_ptr, const T* __restrict__ grad_output_ptr, T* __restrict__ local_grad_input_ptr,
+                             T* __restrict__ local_grad_weight_ptr, T& local_alpha_grad, int64_t input_batch_stride, int64_t input_channel_stride,
+                             int64_t weight_out_stride, int64_t weight_in_stride, int64_t grad_output_batch_stride,
+                             int64_t grad_output_channel_stride)
 {
-    using MergePolicy = MorphoMergePolicy<T, merge>;
-    
     const T* grad_output_base = grad_output_ptr + b * grad_output_batch_stride + o * grad_output_channel_stride;
     const T abs_alpha = std::abs(alpha);
     const bool is_dilation_like = alpha >= 0;
@@ -209,16 +198,14 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
             std::vector<T> channel_outputs(in_channels);
             std::vector<std::vector<T>> channel_vals(in_channels);
             std::vector<std::vector<T>> channel_soft_weights(in_channels);
-            
+
             for (int64_t i = 0; i < in_channels; i++)
             {
                 const T* input_channel = input_ptr + b * input_batch_stride + i * input_channel_stride;
                 const T* weight_in = weight_ptr + o * weight_out_stride + i * weight_in_stride;
 
-                T reference_value = is_dilation_like ? 
-                    std::numeric_limits<T>::lowest() : 
-                    std::numeric_limits<T>::max();
-                
+                T reference_value = is_dilation_like ? std::numeric_limits<T>::lowest() : std::numeric_limits<T>::max();
+
                 channel_vals[i].resize(kernel_height * kernel_width);
                 std::vector<bool> valid_positions(kernel_height * kernel_width, false);
                 int64_t k = 0;
@@ -253,14 +240,13 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
 
                 T sum = static_cast<T>(0);
                 channel_soft_weights[i].resize(kernel_height * kernel_width, static_cast<T>(0));
-                
+
                 for (k = 0; k < kernel_height * kernel_width; k++)
                 {
                     if (valid_positions[k])
                     {
-                        const T exp_term = is_dilation_like ?
-                            std::exp((channel_vals[i][k] - reference_value) * abs_alpha) :
-                            std::exp((reference_value - channel_vals[i][k]) * abs_alpha);
+                        const T exp_term = is_dilation_like ? std::exp((channel_vals[i][k] - reference_value) * abs_alpha)
+                                                            : std::exp((reference_value - channel_vals[i][k]) * abs_alpha);
                         channel_soft_weights[i][k] = exp_term;
                         sum += exp_term;
                     }
@@ -286,14 +272,14 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
             {
                 target_value = *std::min_element(channel_outputs.begin(), channel_outputs.end());
             }
-            
+
             int64_t winner_count = 0;
             const T tolerance = static_cast<T>(1e-7);
             for (const T& val : channel_outputs)
             {
                 if (std::abs(val - target_value) < tolerance) winner_count++;
             }
-            
+
             const T winner_grad = grad_out / static_cast<T>(winner_count);
 
             for (int64_t i = 0; i < in_channels; i++)
@@ -302,7 +288,7 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
                 {
                     const T smorph_output = channel_outputs[i];
                     int64_t k = 0;
-                    
+
                     for (int64_t kh = 0; kh < kernel_height; kh++)
                     {
                         const int64_t ph = h + kernel_height_half - kh;
@@ -348,11 +334,9 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
 /// @param grad_weight The gradient weight tensor.
 /// @param grad_alpha The gradient alpha tensor.
 template <MORPHO_MERGE merge, typename T>
-void smorph_backward_cpu(torch::Tensor input, torch::Tensor weight, T alpha, torch::Tensor grad_output,
-                        torch::Tensor grad_input, torch::Tensor grad_weight, torch::Tensor grad_alpha)
+void smorph_backward_cpu(torch::Tensor input, torch::Tensor weight, T alpha, torch::Tensor grad_output, torch::Tensor grad_input,
+                         torch::Tensor grad_weight, torch::Tensor grad_alpha)
 {
-    using MergePolicy = MorphoMergePolicy<T, merge>;
-    
     const auto input_shape = input.sizes();
     const auto weight_shape = weight.sizes();
     const int64_t kernel_height = weight_shape[2];
@@ -417,21 +401,17 @@ void smorph_backward_cpu(torch::Tensor input, torch::Tensor weight, T alpha, tor
             {
                 if constexpr (merge == MORPHO_MERGE::ADD || merge == MORPHO_MERGE::AVERAGE)
                 {
-                    smorph_backward_sum_avg<merge, T>(
-                        b, o, in_channels, height, width, kernel_height, kernel_width,
-                        kernel_height_half, kernel_width_half, alpha, input_ptr, weight_ptr,
-                        grad_output_ptr, local_grad_input_ptr, local_grad_weight_ptr,
-                        local_alpha_grad, input_batch_stride, input_channel_stride,
-                        weight_out_stride, weight_in_stride, output_batch_stride, output_channel_stride);
+                    smorph_backward_sum_avg<merge, T>(b, o, in_channels, height, width, kernel_height, kernel_width, kernel_height_half,
+                                                      kernel_width_half, alpha, input_ptr, weight_ptr, grad_output_ptr, local_grad_input_ptr,
+                                                      local_grad_weight_ptr, local_alpha_grad, input_batch_stride, input_channel_stride,
+                                                      weight_out_stride, weight_in_stride, output_batch_stride, output_channel_stride);
                 }
                 else
                 {
-                    smorph_backward_min_max<merge, T>(
-                        b, o, in_channels, height, width, kernel_height, kernel_width,
-                        kernel_height_half, kernel_width_half, alpha, input_ptr, weight_ptr,
-                        grad_output_ptr, local_grad_input_ptr, local_grad_weight_ptr,
-                        local_alpha_grad, input_batch_stride, input_channel_stride,
-                        weight_out_stride, weight_in_stride, output_batch_stride, output_channel_stride);
+                    smorph_backward_min_max<merge, T>(b, o, in_channels, height, width, kernel_height, kernel_width, kernel_height_half,
+                                                      kernel_width_half, alpha, input_ptr, weight_ptr, grad_output_ptr, local_grad_input_ptr,
+                                                      local_grad_weight_ptr, local_alpha_grad, input_batch_stride, input_channel_stride,
+                                                      weight_out_stride, weight_in_stride, output_batch_stride, output_channel_stride);
                 }
             }
         }

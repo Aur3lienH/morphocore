@@ -101,14 +101,10 @@ auto morpho_operation_forward_cpu_template(torch::Tensor input, torch::Tensor we
                                     T best_value = INITIAL_VAL;
                                     int64_t best_k = 0;
                                     int64_t k = 0;
-
-#pragma unroll
                                     for (int64_t kh = 0; kh < KERNEL_SIZE; kh++)
                                     {
                                         const int64_t ph = h + kernel_half - kh;
                                         const bool h_valid = (ph >= 0 && ph < height);
-
-#pragma unroll
                                         for (int64_t kw = 0; kw < KERNEL_SIZE; kw++, k++)
                                         {
                                             const int64_t pw = w + kernel_half - kw;

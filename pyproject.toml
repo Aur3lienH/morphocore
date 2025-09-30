@@ -61,18 +61,18 @@ skip = [
     "*-manylinux*s390x",
     "*-manylinux*armv7l",
 ]
-environment = { MORPHO_WITH_CUDA="0"}
+environment = { MORPHO_WITH_CUDA="1", CUDA_HOME="/usr/local/cuda" }
 
 [tool.cibuildwheel.linux]
+manylinux-x86_64-image = "sameli/manylinux2014_x86_64_cuda_12.3"
 before-all = [
-    "pip install torch --index-url https://download.pytorch.org/whl/cpu",
     # "pip install setuptools",
     # "yum install -y gcc gcc-c++",
     # "yum install -y epel-release",
     # "yum install -y wget",
 ]
 
-repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel} --exclude libtorch_cpu.so --exclude libc10.so --exclude libtorch.so --exclude libtorch_python.so --exclude libtorch_cuda.so"
+repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel} --exclude libtorch_cpu.so --exclude libc10.so --exclude libc10_cuda.so --exclude libtorch.so --exclude libtorch_python.so --exclude libtorch_cuda.so"
 
 
 

@@ -196,9 +196,9 @@ __global__ void morpho_operation_backward_min_max_kernel(const scalar_t* input, 
 
 /// @brief Wrapper function to dispatch the appropriate kernel based on merge policy
 template <MORPHO_OPERATION Op, MORPHO_MERGE merge, typename scalar_t>
-void morpho_operation_backward(const scalar_t* input, const scalar_t* weight, scalar_t* grad_input, scalar_t* grad_weight,
-                               const scalar_t* grad_output, int batch_size, int in_channels, int out_channels, int height, int width,
-                               int kernel_height, int kernel_width, dim3 blocks, dim3 threads)
+void morpho_operation_backward_kernel(const scalar_t* input, const scalar_t* weight, scalar_t* grad_input, scalar_t* grad_weight,
+                                      const scalar_t* grad_output, int batch_size, int in_channels, int out_channels, int height, int width,
+                                      int kernel_height, int kernel_width, dim3 blocks, dim3 threads)
 {
     if constexpr (merge == MORPHO_MERGE::ADD || merge == MORPHO_MERGE::AVERAGE)
     {

@@ -9,7 +9,7 @@
     #include <cuda_runtime.h>
 #endif
 
-//TODO: Update the logic to save indices when more performant. (Small kernel, Small images)
+// TODO: Update the logic to save indices when more performant. (Small kernel, Small images)
 /// @brief Function to determine if indices should be saved based on input and weight tensors.
 /// @param input Input tensor of shape [batch, channels, height, width].
 /// @param weight Weight tensor of shape [out_channels, in_channels, kernel_height, kernel_width].
@@ -38,7 +38,7 @@ torch::Scalar get_padding_value(torch::ScalarType dtype)
         }
     }
     else
-    {  
+    {
         if (dtype == torch::kFloat)
         {
             return torch::Scalar(std::numeric_limits<float>::infinity());
@@ -105,9 +105,10 @@ torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradConte
         constexpr const char* operation_name = (Op == MORPHO_OPERATION::DILATION) ? "morpho_dilation_forward" : "morpho_erosion_forward";
 
         AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), operation_name, [&] {
-            morpho_forward_kernel<Op, scalar_t>(padded_input.template data_ptr<scalar_t>(), weight_correct_dims.template data_ptr<scalar_t>(),
-                                                output.template data_ptr<scalar_t>(), max_indices.template data_ptr<int64_t>(), batch_size,
-                                                in_channels, out_channels, height, width, padded_height, padded_width, kernel_height, kernel_width);
+            morpho_forward_kernel<Op, merge, scalar_t>(padded_input.template data_ptr<scalar_t>(), weight_correct_dims.template data_ptr<scalar_t>(),
+                                                       output.template data_ptr<scalar_t>(), max_indices.template data_ptr<int64_t>(), batch_size,
+                                                       in_channels, out_channels, height, width, padded_height, padded_width, kernel_height,
+                                                       kernel_width);
         });
 
         cudaError_t err = cudaGetLastError();
@@ -193,10 +194,10 @@ torch::autograd::tensor_list MorphoOperation<Op, merge>::backward(torch::autogra
         constexpr const char* operation_name = "morpho_backward_kernel";
 
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), operation_name, [&] {
-            morpho_backward_kernel<Op, scalar_t>(padded_input.template data_ptr<scalar_t>(), weight.template data_ptr<scalar_t>(),
-                                                 grad_input.template data_ptr<scalar_t>(), grad_weight.template data_ptr<scalar_t>(),
-                                                 grad_output.template data_ptr<scalar_t>(), max_indices.template data_ptr<int64_t>(), batch_size,
-                                                 in_channels, out_channels, height, width, padded_height, padded_width, kernel_height, kernel_width);
+            morpho_backward_kernel<Op, merge, scalar_t>(
+                padded_input.template data_ptr<scalar_t>(), weight.template data_ptr<scalar_t>(), grad_input.template data_ptr<scalar_t>(),
+                grad_weight.template data_ptr<scalar_t>(), grad_output.template data_ptr<scalar_t>(), max_indices.template data_ptr<int64_t>(),
+                batch_size, in_channels, out_channels, height, width, padded_height, padded_width, kernel_height, kernel_width);
         });
 
         cudaError_t err = cudaGetLastError();

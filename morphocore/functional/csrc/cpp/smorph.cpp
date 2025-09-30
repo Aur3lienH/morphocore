@@ -35,7 +35,7 @@ torch::Tensor Smorph<merge>::forward(torch::autograd::AutogradContext* ctx, torc
 
     if (input.is_cuda())
     {
-#ifdef WITH_CUDA
+#ifdef WITH_CUDAS
         auto batch_size = input_shape[0];
         auto channels = input_shape[1];
         auto height = input_shape[2];
@@ -68,8 +68,9 @@ torch::Tensor Smorph<merge>::forward(torch::autograd::AutogradContext* ctx, torc
         cudaError_t err = cudaGetLastError();
         if (err != cudaSuccess)
         {
-            printf("Kernel params: batch=%d, channels=%d, height=%d, width=%d, kernel=(%d,%d), half=(%d,%d)\n", batch_size, channels, height, width,
-                   kernel_height, kernel_width, kernel_height_half, kernel_width_half);
+            // printf("Kernel params: batch=%d, channels=%d, height=%d, width=%d, kernel=(%d,%d), half=(%d,%d)\n", batch_size, channels, height,
+            // width,
+            //        kernel_height, kernel_width, kernel_height_half, kernel_width_half);
             AT_ERROR("CUDA kernel launch error: ", cudaGetErrorString(err));
         }
         ctx->save_for_backward({output, reference_values, max_values, alpha, input, weight});
@@ -112,7 +113,7 @@ torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradCo
     torch::Tensor grad_alpha = torch::zeros_like(alpha);
     if (grad_outputs[0].is_cuda())
     {
-#ifdef WITH_CUDA
+#ifdef WITH_CUDAS
 
         auto input_shape = input.sizes();
         auto weight_shape = weight.sizes();
