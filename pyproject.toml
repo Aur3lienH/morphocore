@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "morphocore"
-version = "0.0.1"
+version = "0.0.2"
 description = "Morphological operations with CUDA acceleration"
 readme = "README.md"
 authors = [{name = "Aurelien HURAND", email = "aurelien.hurand@gmail.com"}]
