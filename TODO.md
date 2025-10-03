@@ -1,0 +1,2 @@
+- [ ] Make it possible to have one alpha per channel to channel.
+- [ ] Add exeption for only the thing that will not be true.
