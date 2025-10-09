@@ -148,6 +148,7 @@ void morpho_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
 
     // Policy for choosing between erosion and dilation.
     using Policy = MorphoPolicyCPU<T, op>;
+    using MergePolicy = MorphoMergePolicy<T, merge>;
 
     const T* grad_output_base = grad_output_ptr + b * grad_output_batch_stride + o * grad_output_channel_stride;
 
@@ -158,15 +159,19 @@ void morpho_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
             const T grad_val = grad_output_base[h * width + w];
             if (grad_val == static_cast<T>(0)) continue;
 
-            T best_value = Policy::initial_value();
+            T best_value = MergePolicy::get_init_value();
             int64_t best_kh = -1;
             int64_t best_kw = -1;
             int64_t best_channel = -1;
 
             for (int64_t i = 0; i < in_channels; i++)
             {
+                T best_value_channel = Policy::initial_value();
+                int64_t best_kh_channel = -1;
+                int64_t best_kw_channel = -1;
                 const T* input_channel = input_ptr + b * input_batch_stride + i * input_channel_stride;
                 const T* weight_base = weight_ptr + o * weight_out_stride + i * weight_in_stride;
+
                 for (int64_t kh = 0; kh < kernel_height; kh++)
                 {
                     for (int64_t kw = 0; kw < kernel_width; kw++)
@@ -181,14 +186,20 @@ void morpho_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
 
                         const T val = Policy::combine(input_val, weight_base[kh * kernel_width + kw]);
 
-                        if (Policy::is_better(val, best_value))
+                        if (Policy::is_better(val, best_value_channel))
                         {
-                            best_value = val;
-                            best_kh = kh;
-                            best_kw = kw;
-                            best_channel = i;
+                            best_value_channel = val;
+                            best_kh_channel = kh;
+                            best_kw_channel = kw;
                         }
                     }
+                }
+                if (MergePolicy::is_better(best_value_channel, best_value))
+                {
+                    best_value = best_value_channel;
+                    best_kh = best_kh_channel;
+                    best_kw = best_kw_channel;
+                    best_channel = i;
                 }
             }
 
@@ -198,6 +209,7 @@ void morpho_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
             if (ih >= 0 && ih < height && iw >= 0 && iw < width)
             {
                 const int64_t grad_input_idx = b * input_batch_stride + best_channel * input_channel_stride + ih * width + iw;
+#pragma omp atomic
                 grad_input_ptr[grad_input_idx] += grad_val;
             }
 

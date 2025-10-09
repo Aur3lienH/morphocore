@@ -1,5 +1,6 @@
 #pragma once
 #include <limits>
+#include <iostream>
 #include "../cpp/morpho_op_enum.hpp"
 
 /// @brief Merge channels policy for GPU implementations.
@@ -57,6 +58,23 @@ struct MorphoMergePolicyGPU
         else
         {
             return a;
+        }
+    }
+
+    __device__ __forceinline__ static constexpr bool is_better(scalar_t a, scalar_t b)
+    {
+        if constexpr (merge_op == MORPHO_MERGE::MAX)
+        {
+            return a > b;
+        }
+        else if constexpr (merge_op == MORPHO_MERGE::MIN)
+        {
+            return a < b;
+        }
+        else
+        {
+            std::runtime_error("is_better is only valid for MAX and MIN merge operations.");
+            return false;
         }
     }
 };

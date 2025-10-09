@@ -142,7 +142,7 @@ void smorph_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
                             const int64_t weight_idx = o * weight_out_stride + i * weight_in_stride + kh * kernel_width + kw;
                             local_grad_weight_ptr[weight_idx] += final_grad;
 
-                            local_alpha_grad += p * val * (val - smorph_output) * grad_out;
+                            local_alpha_grad += p * (val - reference_value) * (val - smorph_output) * grad_out;
                         }
                     }
                 }
@@ -187,6 +187,7 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
     const T* grad_output_base = grad_output_ptr + b * grad_output_batch_stride + o * grad_output_channel_stride;
     const T abs_alpha = std::abs(alpha);
     const bool is_dilation_like = alpha >= 0;
+    std::vector<T> channel_reference_values(in_channels);
 
     for (int64_t h = 0; h < height; h++)
     {
@@ -237,6 +238,7 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
                         }
                     }
                 }
+                channel_reference_values[i] = reference_value;
 
                 T sum = static_cast<T>(0);
                 channel_soft_weights[i].resize(kernel_height * kernel_width, static_cast<T>(0));
@@ -287,6 +289,7 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
                 if (std::abs(channel_outputs[i] - target_value) < tolerance)
                 {
                     const T smorph_output = channel_outputs[i];
+                    const T reference_value = channel_reference_values[i];
                     int64_t k = 0;
 
                     for (int64_t kh = 0; kh < kernel_height; kh++)
@@ -313,7 +316,7 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
                                 const int64_t weight_idx = o * weight_out_stride + i * weight_in_stride + kh * kernel_width + kw;
                                 local_grad_weight_ptr[weight_idx] += final_grad;
 
-                                local_alpha_grad += p * val * (val - smorph_output) * winner_grad;
+                                local_alpha_grad += p * (val - reference_value) * (val - smorph_output) * winner_grad;
                             }
                         }
                     }

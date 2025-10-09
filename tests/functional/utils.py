@@ -48,14 +48,14 @@ def correct_morphology(image, selem, operation='dilation'):
     return result
 
 
-def dispatch_operation(operation: str, image: torch.Tensor, structuring_element: torch.Tensor):
+def dispatch_operation(operation: str, image: torch.Tensor, structuring_element: torch.Tensor, channel_merge_mode: str = 'sum'):
     if operation == 'dilation':
-        return F.dilation(image, structuring_element)
+        return F.dilation(x=image, w=structuring_element, channel_merge_mode=channel_merge_mode)
     elif operation == 'erosion':
-        return F.erosion(image, structuring_element)
+        return F.erosion(x=image, w=structuring_element, channel_merge_mode=channel_merge_mode)
     elif operation == 'Sdilation':
-        return F.smorph(image, structuring_element, alpha=torch.Tensor([1000.0]).to(image.device))
+        return F.smorph(x=image, w=structuring_element, alpha=torch.tensor([1000.0], dtype=image.dtype).to(image.device), channel_merge_mode=channel_merge_mode)
     elif operation == 'Serosion':
-        return F.smorph(image, structuring_element, alpha=torch.Tensor([-1000.0]).to(image.device))
+        return F.smorph(x=image, w=structuring_element, alpha=torch.tensor([-1000.0], dtype=image.dtype).to(image.device), channel_merge_mode=channel_merge_mode)
     else:
         raise ValueError(f"Unknown operation: {operation}")

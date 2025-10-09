@@ -1,4 +1,5 @@
 import torch
+import os
 import numpy as np
 import morphocore.functional as F
 import pytest
@@ -213,11 +214,11 @@ class TestMorphologicalOperations:
 
 class TestMorphologyBackward:
     
-    def test_grad(self, device, operation):
+    def test_grad_deterministic(self, device, operation):
         input_test = torch.tensor([[[[1.0, 2.0, 3.0],
                            [4.0, 5.0, 6.0], 
                            [7.0, 8.0, 9.0]]]], dtype=torch.float32, requires_grad=True).to(device)
-
+                           
         weight_test = torch.tensor([[[[0.1, 0.2, 0.3],
                                 [0.4, 0.5, 0.6],
                                 [0.7, 0.8, 0.9]]]], dtype=torch.float32).to(device)
@@ -245,6 +246,120 @@ class TestMorphologyBackward:
         )
         
         assert result, f"Gradient check failed for morphological {operation}"
+
+    @pytest.mark.parametrize("input_size,kernel_size", [
+        ((1, 1, 5, 5), (1, 1, 3, 3)),
+        ((1, 1, 7, 7), (1, 1, 5, 5)),
+        
+        ((1, 1, 6, 8), (1, 1, 3, 5)),    # kernel 3x5
+        ((1, 1, 8, 6), (1, 1, 5, 3)),    # kernel 5x3
+        ((1, 1, 7, 9), (1, 1, 3, 7)),    # kernel 3x7
+        
+        ((1, 1, 4, 8), (1, 1, 3, 3)),    # image 4x8
+        ((1, 1, 8, 4), (1, 1, 3, 3)),    # image 8x4
+        ((1, 1, 6, 10), (1, 1, 3, 3)),   # image 6x10
+        
+        ((2, 1, 4, 4), (1, 1, 3, 3)),
+        ((3, 1, 5, 5), (1, 1, 3, 3)),
+        ((2, 1, 6, 8), (1, 1, 3, 5)),    # batch + rectangular
+        
+        ((1, 2, 6, 6), (1, 2, 3, 3)),
+        ((1, 3, 5, 7), (1, 3, 3, 3)),
+        ((1, 4, 6, 6), (1, 4, 5, 5)),
+        
+        ((1, 1, 6, 6), (3, 1, 3, 3)),
+        ((1, 1, 8, 8), (4, 1, 3, 3)),
+        ((1, 1, 5, 9), (2, 1, 3, 5)),    # rectangular + multi-output
+        
+        ((1, 2, 6, 6), (3, 2, 3, 3)),
+        ((1, 3, 7, 7), (2, 3, 5, 5)),
+        ((1, 2, 8, 6), (4, 2, 3, 5)),    # rectangular + multi-channel
+        
+        ((2, 2, 5, 5), (1, 2, 3, 3)),
+        ((3, 1, 4, 6), (2, 1, 3, 3)),
+        ((2, 3, 6, 8), (2, 3, 3, 5)),
+        
+        ((1, 1, 9, 9), (1, 1, 7, 7)),
+        ((1, 1, 10, 8), (1, 1, 5, 7)),
+        ((1, 2, 8, 8), (1, 2, 6, 6)),
+        
+        ((1, 1, 3, 3), (1, 1, 3, 3)),    # kernel == image
+        ((1, 1, 4, 3), (1, 1, 3, 3)),    # image à peine plus grande
+        ((1, 1, 3, 5), (1, 1, 3, 3)),    # image rectangulaire petite
+        
+        ((1, 1, 12, 4), (1, 1, 3, 3)),   # image très rectangulaire
+        ((1, 1, 4, 12), (1, 1, 3, 3)),   # image très rectangulaire (inverse)
+        ((1, 1, 8, 8), (1, 1, 7, 3)),    # kernel très rectangulaire
+        ((1, 1, 8, 8), (1, 1, 3, 7)),    # kernel très rectangulaire (inverse)
+    ])
+    @pytest.mark.parametrize("channel_merge_mode", ['sum', 'max', 'min', 'mean'])
+    def test_grad_random(self, device, operation, input_size, kernel_size, channel_merge_mode):
+        os.environ['OMP_NUM_THREADS'] = '1'
+        torch.manual_seed(42)
+        input_test = torch.randn(*input_size, dtype=torch.float64, requires_grad=True).to(device)
+        input_test = input_test * 10 + torch.arange(input_test.numel(), dtype=torch.float64, device=device).reshape(input_test.shape)
+
+        weight_test = torch.randn(*kernel_size, dtype=torch.float64).to(device)
+        weight_test = weight_test * 10 + torch.arange(weight_test.numel(), dtype=torch.float64, device=device).reshape(weight_test.shape)
+        
+        print(f"Device: {device}, Operation: {operation}")
+        print(f"Input shape: {input_test.shape}")
+        print(f"Weight shape: {weight_test.shape}")
+        
+        func = lambda x, w: dispatch_operation(operation, x, w, channel_merge_mode)
+        
+        #if operation.startswith('S'):
+        tolerance = 1e-2
+        
+        result = torch.autograd.gradcheck(
+            func,
+            (input_test, weight_test),
+            eps=1e-4,           
+            atol=tolerance,          
+            rtol=tolerance * 10,         
+            nondet_tol=1e-5,    
+            fast_mode=False    
+        )
+        
+        assert result, f"Gradient check failed for morphological {operation} with random input"
+
+    def test_grad_smorph(self, device, alpha):
+        operation = 'Smorph'
+        input_test = torch.tensor([[[[1.0, 2.0, 3.0],
+                           [4.0, 5.0, 6.0], 
+                           [7.0, 8.0, 9.0]]]], dtype=torch.float32, requires_grad=True).to(device)
+
+        weight_test = torch.tensor([[[[0.1, 0.2, 0.3],
+                                [0.4, 0.5, 0.6],
+                                [0.7, 0.8, 0.9]]]], dtype=torch.float32).to(device)
+        
+        alpha_test = torch.tensor(alpha, dtype=torch.float32, requires_grad=True).to(device)
+        
+        print(f"Device: {device}, Operation: {operation}, Alpha: {alpha}")
+        print("Input:")
+        print(input_test.squeeze().cpu())
+        print("Weight:")
+        print(weight_test.squeeze().cpu())
+        print(f"Alpha: {alpha_test.item()}")
+        
+        func = lambda x, w, a: F.smorph(x, w, a)
+        
+        if abs(alpha) < 1e-3:
+            tolerance = 1e-2
+        else:
+            tolerance = 1e-3
+        
+        result = torch.autograd.gradcheck(
+            func,
+            (input_test, weight_test, alpha_test),
+            eps=1e-4,           
+            atol=tolerance,          
+            rtol=tolerance * 10,         
+            nondet_tol=1e-5,    
+            fast_mode=False    
+        )
+        
+        assert result, f"Gradient check failed for morphological {operation} with alpha={alpha}"
 
 
 

@@ -57,6 +57,22 @@ struct MorphoMergePolicy
         }
     }
 
+    static constexpr bool is_better(T a, T b)
+    {
+        if constexpr (merge_op == MORPHO_MERGE::MAX)
+        {
+            return a > b;
+        }
+        else if constexpr (merge_op == MORPHO_MERGE::MIN)
+        {
+            return a < b;
+        }
+        else
+        {
+            throw std::runtime_error("is_better is only valid for MAX and MIN merge operations.");
+        }
+    }
+
     static T finalize(T a, int in_channels)
     {
         if constexpr (merge_op == MORPHO_MERGE::AVERAGE)

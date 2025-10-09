@@ -92,12 +92,17 @@ torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradConte
     {
 #ifdef WITH_CUDA
 
+        input_correct_dims = input_correct_dims.contiguous();
+        weight_correct_dims = weight_correct_dims.contiguous();
+
         output = torch::zeros({batch_size, out_channels, height, width}, input_correct_dims.options());
         max_indices = torch::zeros({batch_size, out_channels, in_channels, height, width}, input.options().dtype(torch::kLong));
 
         auto padding_value = get_padding_value<Op>(input_correct_dims.scalar_type());
         auto padded_input = torch::constant_pad_nd(
             input_correct_dims, torch::IntList{kernel_width_half, kernel_width_half, kernel_height_half, kernel_height_half}, padding_value);
+
+        padded_input = padded_input.contiguous();
 
         int padded_height = height + 2 * kernel_height_half;
         int padded_width = width + 2 * kernel_width_half;
@@ -187,6 +192,9 @@ torch::autograd::tensor_list MorphoOperation<Op, merge>::backward(torch::autogra
         auto padding_value = get_padding_value<Op>(input.scalar_type());
         auto padded_input = torch::constant_pad_nd(
             input, torch::IntList{kernel_width_half, kernel_width_half, kernel_height_half, kernel_height_half}, padding_value);
+
+        // Ensure padded input is contiguous
+        padded_input = padded_input.contiguous();
 
         int padded_height = height + 2 * kernel_height_half;
         int padded_width = width + 2 * kernel_width_half;

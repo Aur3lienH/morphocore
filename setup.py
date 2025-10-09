@@ -17,7 +17,7 @@ cuda_sources = [os.path.join(path_to_cuda, file) for file in cuda_files]
 with_cuda = os.environ.get('MORPHO_WITH_CUDA', '1') == '1'
 
 if sys.platform.startswith('linux'):
-    cxx_flags = ['-O3', '-DNDEBUG', '-std=c++17', '-ffast-math', '-fopenmp', '-Wno-unused-variable']
+    cxx_flags = ['-O3', '-DNDEBUG', '-std=c++17', '-fopenmp', '-Wno-unused-variable']
     link_args = ['-fopenmp']
 elif sys.platform.startswith('darwin'):
     cxx_flags = ['-O3', '-DNDEBUG', '-std=c++17', '-ffast-math']

@@ -102,7 +102,6 @@ torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradCo
     torch::Tensor grad_input = torch::zeros_like(input, grad_outputs[0].options());
     torch::Tensor grad_weight = torch::zeros_like(weight, grad_outputs[0].options());
     torch::Tensor grad_alpha = torch::zeros_like(alpha, grad_outputs[0].options());
-    std::cout << "HERERERERERERER\n";
     if (grad_outputs[0].is_cuda())
     {
 #ifdef WITH_CUDA
@@ -118,8 +117,6 @@ torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradCo
         auto kernel_width = weight_shape[3];
         auto kernel_height_half = kernel_height / 2;
         auto kernel_width_half = kernel_width / 2;
-
-        std::cout << "DEBUG: Backward pass CUDA with merge policy " << static_cast<int>(merge) << "\n";
 
         // cudaFuncSetAttribute(morpho_smorph_backward_kernel<float>, cudaFuncAttributePreferredSharedMemoryCarveout, cudaSharedmemCarveoutMaxShared);
 
