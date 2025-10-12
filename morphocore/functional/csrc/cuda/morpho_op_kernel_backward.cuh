@@ -125,7 +125,7 @@ __global__ void morpho_operation_backward_min_max_kernel(const scalar_t* input, 
 
         for (int c = 0; c < in_channels; c++)
         {
-            const scalar_t* input_channel = input + b * in_channels * height * width + c * height * width;
+            const scalar_t* input_channel = input + b * in_channels * padded_height * padded_width + c * padded_height * padded_width;
             const scalar_t* weight_base = weight + o * in_channels * kernel_height * kernel_width + c * kernel_height * kernel_width;
 
             scalar_t best_channel_value = Policy::initial_value();
@@ -136,19 +136,25 @@ __global__ void morpho_operation_backward_min_max_kernel(const scalar_t* input, 
             {
                 for (int kw = 0; kw < kernel_width; kw++)
                 {
-
                     const int ph = h + kernel_height_half - kh;
                     const int pw = w + kernel_width_half - kw;
-
-                    const bool h_valid = (ph >= 0 && ph < height);
-                    const bool w_valid = (pw >= 0 && pw < width);
 
                     const int padded_ph = ph + kernel_height_half;
                     const int padded_pw = pw + kernel_width_half;
 
-                    const scalar_t input_val = (h_valid && w_valid) ? input_channel[padded_ph * padded_width + padded_pw] : Policy::padding_value();
+                    const bool padded_h_valid = (padded_ph >= 0 && padded_ph < padded_height);
+                    const bool padded_w_valid = (padded_pw >= 0 && padded_pw < padded_width);
+
+                    const scalar_t input_val = (padded_h_valid && padded_w_valid) ? input_channel[padded_ph * padded_width + padded_pw] : Policy::padding_value();
 
                     const scalar_t val = Policy::combine(input_val, weight_base[kh * kernel_width + kw]);
+
+                    if (Policy::is_better(val, best_channel_value))
+                    {
+                        best_channel_value = val;
+                        channel_best_kh = kh;
+                        channel_best_kw = kw;
+                    }
                 }
             }
 
@@ -201,21 +207,18 @@ __global__ void morpho_operation_backward_min_max_kernel(const scalar_t* input, 
 template <MORPHO_OPERATION Op, MORPHO_MERGE merge, typename scalar_t>
 void morpho_operation_backward_kernel(const scalar_t* input, const scalar_t* weight, scalar_t* grad_input, scalar_t* grad_weight,
                                       const scalar_t* grad_output, int batch_size, int in_channels, int out_channels, int height, int width,
-                                      int padded_height, int padded_width,  // ADD THESE TWO PARAMETERS
-                                      int kernel_height, int kernel_width, dim3 blocks, dim3 threads)
+                                      int padded_height, int padded_width, int kernel_height, int kernel_width, dim3 blocks, dim3 threads)
 {
     if constexpr (merge == MORPHO_MERGE::ADD || merge == MORPHO_MERGE::AVERAGE)
     {
         morpho_operation_backward_sum_avg_kernel<Op, merge, scalar_t><<<blocks, threads>>>(input, weight, grad_input, grad_weight, grad_output,
                                                                                            batch_size, in_channels, out_channels, height, width,
-                                                                                           padded_height, padded_width,  // ADD THESE
-                                                                                           kernel_height, kernel_width);
+                                                                                           padded_height, padded_width, kernel_height, kernel_width);
     }
     else
     {
-        // morpho_operation_backward_min_max_kernel<Op, merge, scalar_t><<<blocks, threads>>>(input, weight, grad_input, grad_weight, grad_output,
-        //                                                                                    batch_size, in_channels, out_channels, height, width,
-        //                                                                                    padded_height, padded_width,  // ADD THESE
-        //                                                                                    kernel_height, kernel_width);
+        morpho_operation_backward_min_max_kernel<Op, merge, scalar_t><<<blocks, threads>>>(input, weight, grad_input, grad_weight, grad_output,
+                                                                                           batch_size, in_channels, out_channels, height, width,
+                                                                                           padded_height, padded_width, kernel_height, kernel_width);
     }
 }
