@@ -296,8 +296,9 @@ class TestMorphologyBackward:
     def test_grad_random(self, device, operation, input_size, kernel_size, channel_merge_mode):
         if operation.startswith('S') and channel_merge_mode in ['min', 'max']:
             pytest.skip(f"channel_merge_mode '{channel_merge_mode}' not applicable for {operation}")
-        torch.cuda.synchronize()
-        torch.cuda.empty_cache()
+        if device == "cuda":
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
         os.environ['OMP_NUM_THREADS'] = '1'
         torch.manual_seed(42)
         input_test = torch.randn(*input_size, dtype=torch.float64, requires_grad=True).to(device)
