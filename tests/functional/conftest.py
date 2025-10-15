@@ -9,6 +9,6 @@ def device(request):
     return request.param
 
 
-@pytest.fixture(params=['dilation', 'erosion', 'Sdilation', 'Serosion'])
+@pytest.fixture(params=['Sdilation', 'Serosion', 'dilation', 'erosion'])
 def operation(request):
     return request.param

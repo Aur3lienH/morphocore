@@ -4,9 +4,6 @@
 #include <torch/torch.h>
 #include "reshaper.hpp"
 
-const int TILE_WIDTH = 32;
-const int TILE_HEIGHT = 8;
-
 #ifdef WITH_CUDA
     #include <cuda_runtime.h>
     #include <device_launch_parameters.h>
@@ -54,18 +51,16 @@ torch::Tensor Smorph<merge>::forward(torch::autograd::AutogradContext* ctx, torc
         torch::Tensor output = torch::zeros({batch_size, weight_shape[0], height, width}, input.options());
         torch::Tensor reference_values = torch::zeros({batch_size, weight_shape[0], height, width}, input.options());
         torch::Tensor max_values = torch::zeros({batch_size, weight_shape[0], height, width}, input.options());
-        const int PADDED_TILE_WIDTH = TILE_WIDTH + 2 * kernel_width_half;
-        const int PADDED_TILE_HEIGHT = TILE_HEIGHT + 2 * kernel_height_half;
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_forward_kernel", ([&] {
                                        morpho_smorph_forward_kernel<merge, scalar_t>(
-                                           input.data_ptr<scalar_t>(), weight.data_ptr<scalar_t>(), alpha.data_ptr<scalar_t>(),
-                                           output.data_ptr<scalar_t>(), reference_values.data_ptr<scalar_t>(), max_values.data_ptr<scalar_t>(),
-                                           batch_size, in_channels, out_channels, height, width, kernel_height, kernel_width, kernel_height_half,
-                                           kernel_width_half);
+                                           input_correct_dims.data_ptr<scalar_t>(), weight_correct_dims.data_ptr<scalar_t>(),
+                                           alpha.data_ptr<scalar_t>(), output.data_ptr<scalar_t>(), reference_values.data_ptr<scalar_t>(),
+                                           max_values.data_ptr<scalar_t>(), batch_size, in_channels, out_channels, height, width, kernel_height,
+                                           kernel_width, kernel_height_half, kernel_width_half);
                                    }));
-
-        ctx->save_for_backward({output, reference_values, max_values, alpha, input, weight});
-        return input_dim_manager.ToOriginalTensor(output);
+        output = input_dim_manager.ToOriginalTensor(output);
+        ctx->save_for_backward({output, reference_values, max_values, alpha, input_correct_dims, weight_correct_dims});
+        return output;
 #endif
     }
     else
@@ -118,7 +113,30 @@ torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradCo
         auto kernel_height_half = kernel_height / 2;
         auto kernel_width_half = kernel_width / 2;
 
-        // cudaFuncSetAttribute(morpho_smorph_backward_kernel<float>, cudaFuncAttributePreferredSharedMemoryCarveout, cudaSharedmemCarveoutMaxShared);
+        // Move tensors to CPU
+        // auto input_cpu = input.to(torch::kCPU);
+        // auto weight_cpu = weight.to(torch::kCPU);
+        // auto alpha_cpu = alpha.to(torch::kCPU);
+        // auto grad_output_cpu = grad_outputs[0].to(torch::kCPU);
+
+        // // Create gradient tensors on CPU
+        // torch::Tensor grad_input_cpu = torch::zeros_like(input_cpu);
+        // torch::Tensor grad_weight_cpu = torch::zeros_like(weight_cpu);
+        // torch::Tensor grad_alpha_cpu = torch::zeros_like(alpha_cpu);
+
+        // // Run CPU backward
+        // AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_backward_cpu", [&] {
+        //     smorph_backward_cpu<merge, scalar_t>(input_cpu, weight_cpu, alpha_cpu.item<scalar_t>(), grad_output_cpu, grad_input_cpu,
+        //     grad_weight_cpu,
+        //                                          grad_alpha_cpu);
+        // });
+
+        // // Move gradients back to CUDA
+        // grad_input = grad_input_cpu.to(input.device());
+        // grad_weight = grad_weight_cpu.to(weight.device());
+        // grad_alpha = grad_alpha_cpu.to(alpha.device());
+
+        // return {grad_input, grad_weight, grad_alpha};
 
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_backward_kernel", ([&] {
                                        morpho_smorph_backward_kernel<merge, scalar_t>(
