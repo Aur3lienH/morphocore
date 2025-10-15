@@ -39,7 +39,6 @@ if with_cuda:
         'nvcc': [
             '-O3',
             '--use_fast_math',
-            '--diag-suppress=20281',
             '-std=c++17',
             '-gencode=arch=compute_61,code=sm_61',     # Pascal: GTX 10XX
             '-gencode=arch=compute_70,code=sm_70',     # Volta: V100
