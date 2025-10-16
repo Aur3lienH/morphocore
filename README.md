@@ -9,18 +9,20 @@ Morphocore is a Python library designed to integrate mathematical morphology int
 
 ## Installation
 
-Installation from PyPi:
+### Installation from PyPi:
 
 ```bash
 pip install morphocore
 ```
 
-Installation from source: 
+❗If you have compatibility issue with the version compile on Pypi please compile the library from source like below !
+
+### Installation from source: 
 
 ```bash
 git clone git@gitlab.lre.epita.fr:aurelien.hurand/morphocore.git
 cd morphocore
-pip install .
+pip install . --no-build-isolation
 ```
 
 ## API Reference

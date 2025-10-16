@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "morphocore"
-version = "0.3.1"
+dynamic = ["version"]
 description = "Morphological operations with CUDA acceleration"
 readme = "README.md"
 authors = [{name = "Aurelien HURAND", email = "aurelien.hurand@gmail.com"}]
@@ -12,11 +12,6 @@ license = {text = "MIT"}
 requires-python = ">=3.9"
 
 keywords = ["morphology", "cuda", "pytorch", "computer-vision"]
-
-dependencies = [
-    "torch>=1.12.0",
-    "numpy>=1.19.0",
-]
 
 classifiers = [
     "Development Status :: 3 - Alpha",

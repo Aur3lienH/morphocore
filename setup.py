@@ -4,6 +4,8 @@ import torch
 import sys
 from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDAExtension
 
+BASE_VERSION = "0.3.3"
+
 path_to_cpp = "morphocore/functional/csrc/cpp"
 path_to_cuda = "morphocore/functional/csrc/cuda"
 
@@ -28,6 +30,9 @@ elif sys.platform.startswith('win'):
 else:
     cxx_flags = ['-O2', '-std=c++17']
     link_args = []
+
+torch_version = os.environ.get("TORCH_VERSION", torch.__version__.split('+')[0])
+version = BASE_VERSION + "+torch" + torch_version.replace(".", "")
 
 if with_cuda:
     Extension = CUDAExtension
@@ -82,5 +87,10 @@ setup(
         'build_ext': BuildExtension
     },
     include_package_data=False,
+    version=version,
+    install_requires=[
+        f"torch=={torch_version}" if torch_version else "torch>=2.0.0",
+        "numpy>=1.19.0",
+    ]
     
 )

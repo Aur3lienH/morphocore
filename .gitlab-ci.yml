@@ -45,9 +45,14 @@ build:
   variables:
     DOCKER_DRIVER: overlay2
     DOCKER_TLS_CERTDIR: "/certs"
+  parallel:
+    matrix:
+    # Each version of torch to build against, add more if needed, removed older versions of pytorch because no widely used anymore
+      - TORCH_VERSION: ["2.6", "2.7", "2.8", "2.9"]
   before_script:
     - apt-get update && apt-get install -y docker.io
     - pip install --upgrade pip cibuildwheel
+    - export TORCH_VERSION="${TORCH_VERSION}"
   script:
     - cibuildwheel --output-dir wheelhouse --platform linux
   artifacts:
