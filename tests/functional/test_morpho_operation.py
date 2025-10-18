@@ -291,6 +291,7 @@ class TestMorphologyBackward:
         ((1, 1, 4, 12), (1, 1, 3, 3)),   # image très rectangulaire (inverse)
         ((1, 1, 8, 8), (1, 1, 7, 3)),    # kernel très rectangulaire
         ((1, 1, 8, 8), (1, 1, 3, 7)),    # kernel très rectangulaire (inverse)
+        ((1, 1, 32, 32), (1, 10, 3, 3)),
     ])
     @pytest.mark.parametrize("channel_merge_mode", ['sum', 'mean', 'min', 'max'])
     def test_grad_random(self, device, operation, input_size, kernel_size, channel_merge_mode):

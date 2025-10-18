@@ -96,7 +96,7 @@ torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradConte
         weight_correct_dims = weight_correct_dims.contiguous();
 
         output = torch::zeros({batch_size, out_channels, height, width}, input_correct_dims.options());
-        max_indices = torch::zeros({batch_size, out_channels, in_channels, height, width}, input.options().dtype(torch::kLong));
+        max_indices = torch::zeros({batch_size}, input.options().dtype(torch::kLong));  // TODO: Fix shape when saving indices
 
         auto padding_value = get_padding_value<Op>(input_correct_dims.scalar_type());
         auto padded_input = torch::constant_pad_nd(
