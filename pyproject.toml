@@ -59,7 +59,7 @@ skip = [
 environment = { MORPHO_WITH_CUDA="1", CUDA_HOME="/usr/local/cuda-12.1", CC = "/opt/rh/gcc-toolset-12/root/usr/bin/gcc",CXX = "/opt/rh/gcc-toolset-12/root/usr/bin/g++" }
 
 [tool.cibuildwheel.linux]
-manylinux-x86_64-image = "registry.gitlab.lre.epita.fr/ahurand/morphocore-builder:latest"
+manylinux-x86_64-image = "aur3lienh/morphocore-builder:latest"
 
 before-build = [
 
