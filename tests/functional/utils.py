@@ -49,13 +49,22 @@ def correct_morphology(image, selem, operation='dilation'):
 
 
 def dispatch_operation(operation: str, image: torch.Tensor, structuring_element: torch.Tensor, channel_merge_mode: str = 'sum'):
+    input_was_2d = image.ndim == 2
+    
+    if input_was_2d:
+        in_channel = 1
+        out_channel = 1
+    else:
+        in_channel = image.shape[1]
+        out_channel = structuring_element.shape[0]
+    
     if operation == 'dilation':
         return F.dilation(x=image, w=structuring_element, channel_merge_mode=channel_merge_mode)
     elif operation == 'erosion':
         return F.erosion(x=image, w=structuring_element, channel_merge_mode=channel_merge_mode)
     elif operation == 'Sdilation':
-        return F.smorph(x=image, w=structuring_element, alpha=torch.tensor([1000.0], dtype=image.dtype).to(image.device), channel_merge_mode=channel_merge_mode)
+        return F.smorph(x=image, w=structuring_element, alpha=torch.full((out_channel, in_channel), 1000, dtype=image.dtype).to(image.device), channel_merge_mode=channel_merge_mode)
     elif operation == 'Serosion':
-        return F.smorph(x=image, w=structuring_element, alpha=torch.tensor([-1000.0], dtype=image.dtype).to(image.device), channel_merge_mode=channel_merge_mode)
+        return F.smorph(x=image, w=structuring_element, alpha=torch.full((out_channel, in_channel), -1000, dtype=image.dtype).to(image.device), channel_merge_mode=channel_merge_mode)
     else:
         raise ValueError(f"Unknown operation: {operation}")

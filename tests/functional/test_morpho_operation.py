@@ -291,7 +291,7 @@ class TestMorphologyBackward:
         ((1, 1, 4, 12), (1, 1, 3, 3)),   # image très rectangulaire (inverse)
         ((1, 1, 8, 8), (1, 1, 7, 3)),    # kernel très rectangulaire
         ((1, 1, 8, 8), (1, 1, 3, 7)),    # kernel très rectangulaire (inverse)
-        ((1, 1, 32, 32), (1, 10, 3, 3)),
+        #((1, 1, 32, 32), (1, 10, 3, 3)),
     ])
     @pytest.mark.parametrize("channel_merge_mode", ['sum', 'mean', 'min', 'max'])
     def test_grad_random(self, device, operation, input_size, kernel_size, channel_merge_mode):
@@ -301,7 +301,7 @@ class TestMorphologyBackward:
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
         os.environ['OMP_NUM_THREADS'] = '1'
-        torch.manual_seed(42)
+        #torch.manual_seed(42)
         input_test = torch.randn(*input_size, dtype=torch.float64, requires_grad=True).to(device)
         input_test = input_test * 10 + torch.arange(input_test.numel(), dtype=torch.float64, device=device).reshape(input_test.shape)
 

@@ -7,3 +7,6 @@ build/
 morphocore.egg-info/
 dist/
 .vscode/
+wheelhouse/
+.venv/
+.pytest_cache/

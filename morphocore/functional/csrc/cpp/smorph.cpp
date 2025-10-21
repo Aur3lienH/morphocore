@@ -68,9 +68,8 @@ torch::Tensor Smorph<merge>::forward(torch::autograd::AutogradContext* ctx, torc
         torch::Tensor output = torch::zeros({input_shape[0], weight_shape[0], input_shape[2], input_shape[3]}, input.options());
         torch::Tensor reference_values = torch::zeros({input_shape[0], weight_shape[0], input_shape[2], input_shape[3]}, input.options());
         torch::Tensor max_values = torch::zeros({input_shape[0], weight_shape[0], input_shape[2], input_shape[3]}, input.options());
-        AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), "smorph_forward_cpu", [&] {
-            output = smorph_forward_cpu<merge, scalar_t>(input_correct_dims, weight_correct_dims, alpha.item<scalar_t>());
-        });
+        AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), "smorph_forward_cpu",
+                                   [&] { output = smorph_forward_cpu<merge, scalar_t>(input_correct_dims, weight_correct_dims, alpha); });
         output = input_dim_manager.ToOriginalTensor(output);
         ctx->save_for_backward({output, reference_values, max_values, alpha, input_correct_dims, weight_correct_dims});
         return output;
@@ -157,7 +156,7 @@ torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradCo
     else
     {
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_backward_cpu", [&] {
-            smorph_backward_cpu<merge, scalar_t>(input, weight, alpha.item<scalar_t>(), grad_outputs[0], grad_input, grad_weight, grad_alpha);
+            smorph_backward_cpu<merge, scalar_t>(input, weight, alpha, grad_outputs[0], grad_input, grad_weight, grad_alpha);
         });
         return {grad_input, grad_weight, grad_alpha};
     }
@@ -171,7 +170,8 @@ template class Smorph<MORPHO_MERGE::ADD>;
 
 // ----------------------------------SMORPH FORWARD PASS CPU----------------------------------------
 
-#define INSTANTIATE_SMORPH_FORWARD(MERGE, TYPE) template auto smorph_forward_cpu<MORPHO_MERGE::MERGE, TYPE>(torch::Tensor, torch::Tensor, TYPE);
+#define INSTANTIATE_SMORPH_FORWARD(MERGE, TYPE)                                                                                                      \
+    template auto smorph_forward_cpu<MORPHO_MERGE::MERGE, TYPE>(torch::Tensor, torch::Tensor, torch::Tensor);
 
 INSTANTIATE_SMORPH_FORWARD(MIN, float)
 INSTANTIATE_SMORPH_FORWARD(MAX, float)
@@ -187,8 +187,8 @@ INSTANTIATE_SMORPH_FORWARD(ADD, double)
 // ----------------------------------SMORPH BACKWARD PASS CPU----------------------------------------
 
 #define INSTANTIATE_SMORPH_BACKWARD(MERGE, TYPE)                                                                                                     \
-    template void smorph_backward_cpu<MORPHO_MERGE::MERGE, TYPE>(torch::Tensor, torch::Tensor, TYPE, torch::Tensor, torch::Tensor, torch::Tensor,    \
-                                                                 torch::Tensor);
+    template void smorph_backward_cpu<MORPHO_MERGE::MERGE, TYPE>(torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor,          \
+                                                                 torch::Tensor, torch::Tensor);
 
 INSTANTIATE_SMORPH_BACKWARD(MIN, float)
 INSTANTIATE_SMORPH_BACKWARD(MAX, float)

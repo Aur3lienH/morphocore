@@ -78,7 +78,7 @@
 //     }
 // }
 
-template <MORPHO_OPERATION Op, MORPHO_MERGE merge, typename scalar_t, bool save_indices>
+template <MORPHO_OPERATION Op, MORPHO_MERGE merge, typename scalar_t>
 __global__ void morpho_operation_forward_kernel(const scalar_t* padded_input, const scalar_t* weight, scalar_t* output, int64_t* max_indexes,
                                                 int batch_size, int in_channels, int out_channels, int height, int width, int kernel_height,
                                                 int kernel_width)
@@ -143,7 +143,7 @@ __global__ void morpho_operation_forward_kernel(const scalar_t* padded_input, co
 
                 int max_idx_index =
                     b * out_channels * in_channels * height * width + o * in_channels * height * width + c * height * width + h * width + w;
-                if constexpr (save_indices)
+                if constexpr (false) // TODO: change to have save_indices parameter
                 {
                     max_indexes[max_idx_index] = max_flat_index;
                 }

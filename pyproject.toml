@@ -1,16 +1,15 @@
 [build-system]
-requires = ["setuptools>=61.0.0", "wheel", "torch"]
+requires = ["setuptools>=61.0.0", "wheel", "torch>=2.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "morphocore"
-dynamic = ["version"]
+dynamic = ["version", "dependencies"]
 description = "Morphological operations with CUDA acceleration"
 readme = "README.md"
 authors = [{name = "Aurelien HURAND", email = "aurelien.hurand@gmail.com"}]
 license = {text = "MIT"} 
-requires-python = ">=3.9"
-
+requires-python = ">=3.10"
 keywords = ["morphology", "cuda", "pytorch", "computer-vision"]
 
 classifiers = [
@@ -18,7 +17,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9", 
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -47,7 +45,7 @@ exclude = [
 # Configuration cibuildwheel (reste identique)
 [tool.cibuildwheel]
 build-verbosity = 3
-build = "cp39-* cp310-* cp311-* cp312-*"
+build = "cp310-* cp311-* cp312-*"
 skip = [
     "*-win32",
     "*-manylinux_i686",
@@ -55,19 +53,22 @@ skip = [
     "*-manylinux*ppc64le",
     "*-manylinux*s390x",
     "*-manylinux*armv7l",
+    "cp38-*",  # Add explicitly
+    "cp39-*",  # Add explicitly
 ]
-environment = { MORPHO_WITH_CUDA="1", CUDA_HOME="/usr/local/cuda" }
+environment = { MORPHO_WITH_CUDA="1", CUDA_HOME="/usr/local/cuda-12.1", CC = "/opt/rh/gcc-toolset-12/root/usr/bin/gcc",CXX = "/opt/rh/gcc-toolset-12/root/usr/bin/g++" }
 
 [tool.cibuildwheel.linux]
-manylinux-x86_64-image = "sameli/manylinux2014_x86_64_cuda_12.3"
-before-all = [
-    # "pip install setuptools",
-    # "yum install -y gcc gcc-c++",
-    # "yum install -y epel-release",
-    # "yum install -y wget",
+manylinux-x86_64-image = "registry.gitlab.lre.epita.fr/ahurand/morphocore-builder:latest"
+
+before-build = [
+
+    "ldd --version",
+    "pip install --upgrade pip", 
+    "pip index versions torch", 
+    "pip install torch==${TORCH_VERSION}",
 ]
 
 repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel} --exclude libtorch_cpu.so --exclude libc10.so --exclude libc10_cuda.so --exclude libtorch.so --exclude libtorch_python.so --exclude libtorch_cuda.so"
-
 
 

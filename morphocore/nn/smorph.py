@@ -19,7 +19,7 @@ class SMorph(AlphaModule):
 
     """
 
-    def __init__(self, in_channel: int, out_channel: int, kernel_shape: tuple, channel_merge_mode: str = "sum", init_alpha: float = 0.0):
+    def __init__(self, in_channel: int, out_channel: int, kernel_shape: tuple, channel_merge_mode: str = "sum", init_alpha: float = 0.0, dtype: torch.dtype = torch.float32):
 
         """
         Initialize Smorph Module
@@ -30,7 +30,7 @@ class SMorph(AlphaModule):
             kernel_shape (tuple): Shape of the morphological kernel
         """
 
-        super(SMorph, self).__init__(in_channel, out_channel, kernel_shape, channel_merge_mode, init_alpha)
+        super(SMorph, self).__init__(in_channel, out_channel, kernel_shape, channel_merge_mode, init_alpha, dtype)
 
     def forward(self, x : torch.Tensor):
 

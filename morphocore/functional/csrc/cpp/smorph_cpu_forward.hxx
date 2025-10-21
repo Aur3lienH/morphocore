@@ -7,10 +7,11 @@
 /// @tparam merge Merge channel policy.
 /// @param input Input tensor.
 /// @param weight Weight tensor.
-/// @param alpha Control parameter for choosing between dilation (alpha -> +inf) and erosion (alpha -> -inf).
+/// @param alpha Control parameter tensor of shape [out_channels, in_channels] for choosing between dilation (alpha -> +inf) and erosion (alpha ->
+/// -inf) for each operation.
 /// @return Output tensor.
 template <MORPHO_MERGE merge, typename T>
-auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
+auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, torch::Tensor alpha)
 {
     const auto input_shape = input.sizes();
     const auto weight_shape = weight.sizes();
@@ -28,11 +29,13 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
 
     auto input_contig = input.contiguous();
     auto weight_contig = weight.contiguous();
+    auto alpha_contig = alpha.contiguous();
 
     torch::Tensor output = torch::empty({batch_size, out_channels, height, width}, input_contig.options());
 
     const T* __restrict__ input_ptr = input_contig.template data_ptr<T>();
     const T* __restrict__ weight_ptr = weight_contig.template data_ptr<T>();
+    const T* __restrict__ alpha_ptr = alpha_contig.template data_ptr<T>();
     T* __restrict__ output_ptr = output.template data_ptr<T>();
 
     const int64_t input_batch_stride = in_channels * height * width;
@@ -41,9 +44,7 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
     const int64_t weight_in_stride = kernel_height * kernel_width;
     const int64_t output_batch_stride = out_channels * height * width;
     const int64_t output_channel_stride = height * width;
-
-    const T abs_alpha = std::abs(alpha);
-    const bool is_dilation_like = alpha >= 0;
+    const int64_t alpha_out_stride = in_channels;
 
     constexpr int64_t TILE_H = 16;
     constexpr int64_t TILE_W = 16;
@@ -61,6 +62,7 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
 
                     const T* input_batch = input_ptr + b * input_batch_stride;
                     const T* weight_out = weight_ptr + o * weight_out_stride;
+                    const T* alpha_out = alpha_ptr + o * alpha_out_stride;
                     T* output_base = output_ptr + b * output_batch_stride + o * output_channel_stride;
 
                     for (int64_t w_tile = 0; w_tile < width; w_tile += TILE_W)
@@ -75,6 +77,10 @@ auto smorph_forward_cpu(torch::Tensor input, torch::Tensor weight, T alpha)
 
                                 for (int64_t i = 0; i < in_channels; i++)
                                 {
+                                    const T alpha_val = alpha_out[i];
+                                    const T abs_alpha = std::abs(alpha_val);
+                                    const bool is_dilation_like = alpha_val >= 0;
+
                                     const T* input_channel = input_batch + i * input_channel_stride;
                                     const T* weight_in = weight_out + i * weight_in_stride;
 

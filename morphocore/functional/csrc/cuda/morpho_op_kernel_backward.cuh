@@ -48,11 +48,7 @@ __global__ void morpho_operation_backward_sum_avg_kernel(const scalar_t* input, 
                     const int padded_ph = ph + kernel_height_half;
                     const int padded_pw = pw + kernel_width_half;
 
-                    const bool padded_h_valid = (padded_ph >= 0 && padded_ph < padded_height);
-                    const bool padded_w_valid = (padded_pw >= 0 && padded_pw < padded_width);
-
-                    const scalar_t input_val =
-                        (padded_h_valid && padded_w_valid) ? input_channel[padded_ph * padded_width + padded_pw] : Policy::padding_value();
+                    const scalar_t input_val = input_channel[padded_ph * padded_width + padded_pw];
 
                     const scalar_t val = Policy::combine(input_val, weight_base[kh * kernel_width + kw]);
 
@@ -142,10 +138,7 @@ __global__ void morpho_operation_backward_min_max_kernel(const scalar_t* input, 
                     const int padded_ph = ph + kernel_height_half;
                     const int padded_pw = pw + kernel_width_half;
 
-                    const bool padded_h_valid = (padded_ph >= 0 && padded_ph < padded_height);
-                    const bool padded_w_valid = (padded_pw >= 0 && padded_pw < padded_width);
-
-                    const scalar_t input_val = (padded_h_valid && padded_w_valid) ? input_channel[padded_ph * padded_width + padded_pw] : Policy::padding_value();
+                    const scalar_t input_val = input_channel[padded_ph * padded_width + padded_pw];
 
                     const scalar_t val = Policy::combine(input_val, weight_base[kh * kernel_width + kw]);
 
