@@ -15,8 +15,8 @@ template <MORPHO_MERGE merge, typename scalar_t>
 __global__ void smorph_backward_kernel(const scalar_t* grad_output,  // [batch, out_channels, height, width]
                                        scalar_t* grad_input,         // [batch, in_channels, height, width]
                                        scalar_t* grad_weight,        // [out_channels, in_channels, kernel_h, kernel_w]
-                                       scalar_t* grad_alpha,         // [1]
-                                       const scalar_t* alpha,        // [1]
+                                       scalar_t* grad_alpha,         // [out_channels, in_channels]
+                                       const scalar_t* alpha,        // [out_channels, in_channels]
                                        const scalar_t* input,        // [batch, in_channels, height, width]
                                        const scalar_t* weights,      // [out_channels, in_channels, kernel_h, kernel_w]
                                        int batch_size, int input_channels, int output_channels, int height, int width, int kernel_height,
@@ -40,10 +40,6 @@ __global__ void smorph_backward_kernel(const scalar_t* grad_output,  // [batch, 
     scalar_t* my_vals = &shared_vals[tid_in_block * kernel_size];
     scalar_t* my_soft_weights = &shared_soft_weights[tid_in_block * kernel_size];
 
-    const scalar_t alpha_val = alpha[0];
-    const scalar_t abs_alpha = abs(alpha_val);
-    const bool is_dilation_like = alpha_val >= 0;
-
     const scalar_t scale_factor = (merge == MORPHO_MERGE::AVERAGE) ? 
         static_cast<scalar_t>(1.0) / input_channels : 
         static_cast<scalar_t>(1.0);
@@ -58,6 +54,11 @@ __global__ void smorph_backward_kernel(const scalar_t* grad_output,  // [batch, 
 
         for (int ci = 0; ci < input_channels; ci++)
         {
+
+            int alpha_index = co * input_channels + ci;
+            const scalar_t alpha_val = alpha[alpha_index];
+            const scalar_t abs_alpha = abs(alpha_val);
+            const bool is_dilation_like = alpha_val >= 0;
             scalar_t reference_value = is_dilation_like ? 
                 -std::numeric_limits<scalar_t>::infinity() : 
                  std::numeric_limits<scalar_t>::infinity();
@@ -162,7 +163,7 @@ __global__ void smorph_backward_kernel(const scalar_t* grad_output,  // [batch, 
                         atomicAdd(&grad_weight[weight_idx], final_grad);
 
                         scalar_t grad_alpha_term = p * (val - reference_value) * (val - weighted_result) * grad_out;
-                        atomicAdd(grad_alpha, grad_alpha_term);
+                        atomicAdd(&grad_alpha[alpha_index], grad_alpha_term);
                     }
                 }
             }

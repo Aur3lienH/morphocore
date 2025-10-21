@@ -86,21 +86,17 @@ __global__ void smorph_forward_kernel(
         const int local_h = threadIdx.y;
         const int local_w = threadIdx.x;
         
-        const scalar_t abs_alpha = abs(alpha[0]);
-        const bool is_dilation_like = alpha[0] >= 0;
-        
         for(int co = 0; co < output_channel; co++)
         {
             scalar_t channel_out_val = MorphoMergePolicyGPU<scalar_t, merge>::get_init_value();
             
             for(int ci = 0; ci < input_channel; ci++)
             {
-                int global_index = 
-                    b * input_channel * output_channel * height * width 
-                    + co * input_channel * height * width 
-                    + ci * height * width
-                    + h * width 
-                    + w;
+
+                int alpha_index = co * input_channel + ci;
+                const scalar_t alpha_val = alpha[alpha_index];
+                const scalar_t abs_alpha = abs(alpha_val);
+                const bool is_dilation_like = alpha_val >= 0;
                 
                 scalar_t reference_value = is_dilation_like ? 
                     std::numeric_limits<scalar_t>::lowest() : 
