@@ -20,5 +20,6 @@ enum class MORPHO_MERGE
     MAX,
     MIN,
     ADD,
-    AVERAGE
+    AVERAGE,
+    SMOOTH
 };

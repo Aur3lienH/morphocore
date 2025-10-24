@@ -4,6 +4,7 @@
 
 #include "morpho_op.hpp"
 #include "smorph.hpp"
+#include "smorph_scm.hpp"
 
 using MorphoDilationSum = MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::ADD>;
 using MorphoDilationMax = MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::MAX>;
@@ -67,6 +68,11 @@ torch::Tensor smorph(torch::Tensor input, torch::Tensor weight, torch::Tensor al
     }
 }
 
+torch::Tensor smorph_scm(torch::Tensor input, torch::Tensor weight, torch::Tensor alpha, torch::Tensor beta)
+{
+    return SmorphSCM::apply(input, weight, alpha, beta);
+}
+
 /// @brief Pybind11 module definition
 PYBIND11_MODULE(cpp_operation, m)
 {
@@ -81,4 +87,5 @@ PYBIND11_MODULE(cpp_operation, m)
     m.def("morpho_dilation", &morpho_dilation, "Morphological dilation operation (CUDA)");
     m.def("morpho_erosion", &morpho_erosion, "Morphological erosion operation (CUDA)");
     m.def("smorph", &smorph, "Morphological approximation of erosion and dilation (CUDA)");
+    m.def("smorph_scm", &smorph_scm, "Soft Morphological layer with Smooth Channel Merge (CUDA)");
 }

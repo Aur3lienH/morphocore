@@ -19,7 +19,7 @@ class SMorph(AlphaModule):
 
     """
 
-    def __init__(self, in_channel: int, out_channel: int, kernel_shape: tuple, channel_merge_mode: str = "sum", init_alpha: float = 0.0, dtype: torch.dtype = torch.float32):
+    def __init__(self, in_channel: int, out_channel: int, kernel_shape: tuple, channel_merge_mode: str = "sum", init_alpha: float = 0.0, dtype: torch.dtype = torch.float32, init_beta: float = None):
 
         """
         Initialize Smorph Module
@@ -31,6 +31,10 @@ class SMorph(AlphaModule):
         """
 
         super(SMorph, self).__init__(in_channel, out_channel, kernel_shape, channel_merge_mode, init_alpha, dtype)
+        if init_beta is not None:
+            self.beta = nn.Parameter(torch.full((out_channel, in_channel), init_beta, dtype=dtype))
+        else:
+            self.beta = None
 
     def forward(self, x : torch.Tensor):
 
@@ -44,4 +48,4 @@ class SMorph(AlphaModule):
             Output tensor, shape : (batch, out_channels, height, width)
         """
 
-        return smorph(x, self.weight, self.alpha, self.channel_merge_mode)
+        return smorph(x=x, w=self.weight, alpha=self.alpha, beta=self.beta, channel_merge_mode=self.channel_merge_mode)

@@ -25,6 +25,16 @@ cd morphocore
 pip install . --no-build-isolation
 ```
 
+### Requirements for Pre-compiled Package (PyPI)
+
+If you install from PyPI using `pip install morphocore`, you'll need:
+
+- Python >= 3.10
+- PyTorch >= 2.6
+- CUDA >= 12.3
+
+If your environment doesn't meet these requirements, please compile from source instead.
+
 ## API Reference
 
 ### Functional Interface
@@ -134,8 +144,6 @@ output = smorph_layer(input_tensor)
 
 ## Channel Merge Modes Explained
 
-- **"max"**: Takes the maximum value across input channels
-- **"min"**: Takes the minimum value across input channels  
 - **"sum"**: Sums values across input channels
 - **"mean"**: Averages values across input channels
 

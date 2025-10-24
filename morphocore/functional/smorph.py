@@ -1,9 +1,10 @@
 import torch
 from cpp_operation import smorph as smorph_cpp
+from cpp_operation import smorph_scm as smorph_scm_cpp
 from morphocore.functional.merge_enum import str_to_merge
 
 
-def smorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_mode: str = "sum") -> torch.Tensor:
+def smorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, beta: torch.Tensor = None, channel_merge_mode: str = "sum") -> torch.Tensor:
     """ 
     Function that approximates a dilation or an erosion depending on an alpha control parameter.
 
@@ -28,5 +29,8 @@ def smorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_
     term2 = (1 - tanh_alpha) / 2
 
     w_tilde_alpha = tanh_alpha * (term1 * w.flip(dims=(-2, -1)) + term2 * w)
+
+    if beta is not None:
+        return smorph_scm_cpp(x, w_tilde_alpha, alpha, beta, str_to_merge(channel_merge_mode))
     
     return smorph_cpp(x, w_tilde_alpha, alpha, str_to_merge(channel_merge_mode))
