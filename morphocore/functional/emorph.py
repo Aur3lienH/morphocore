@@ -1,9 +1,10 @@
+import torch
 from torch import nn
 from torch.functional import F
 from morphocore.functional import dilation
 from morphocore.functional import erosion
 
-def emorph(x, w1, w2, alpha):
+def emorph(x, w1, w2, alpha, channel_merge_mode):
     """
     Exact morphological function
 
@@ -24,7 +25,10 @@ def emorph(x, w1, w2, alpha):
         w (torch.Tensor): weight
         alpha (torch.Tensor): control parameter
     """
-    soft = F.sigmoid(alpha)
-    out_erosion = erosion(x, w1)
-    out_dilation = dilation(x, w2)
+    out_erosion = erosion(x, w1, channel_merge_mode=channel_merge_mode)
+    out_dilation = dilation(x, w2, channel_merge_mode=channel_merge_mode)
+
+    soft = torch.sigmoid(alpha.mean(dim=1))  # (C_out,)
+    soft = soft.view(1, -1, 1, 1)  # (1, C_out, 1, 1)
+    
     return out_erosion * (1.0 - soft) + out_dilation * soft
