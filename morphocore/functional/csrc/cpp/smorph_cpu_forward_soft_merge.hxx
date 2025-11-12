@@ -53,7 +53,7 @@ auto smorph_scm_forward_cpu(torch::Tensor input, torch::Tensor weight, torch::Te
 
 #pragma omp parallel
     {
-#pragma omp for schedule(guided) collapse(3)
+#pragma omp for schedule(guided) collapse(2)
         for (int64_t b = 0; b < batch_size; b++)
         {
             for (int64_t o = 0; o < out_channels; o++)
