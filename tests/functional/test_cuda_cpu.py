@@ -14,6 +14,9 @@ class TestCPUvsCUDA:
     @pytest.mark.parametrize("channel_merge_mode", ['sum', 'mean', 'min', 'max'])
     def test_forward_cpu_vs_cuda(self, operation, input_size, kernel_size, channel_merge_mode):
         """Test that CPU and CUDA produce identical forward results."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA is not available.")
+
         if operation.startswith('S'):
             pytest.skip(f"Skipping the operation '{operation}' for the moment: TODO.")
         
@@ -59,6 +62,10 @@ class TestCPUvsCUDA:
     @pytest.mark.parametrize("channel_merge_mode", ['sum', 'mean', 'min', 'max'])
     def test_backward_cpu_vs_cuda(self, operation, input_size, kernel_size, channel_merge_mode):
         """Test that CPU and CUDA produce identical gradients."""
+
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA is not available.")
+            
         if operation.startswith('S'):
             pytest.skip(f"Skipping the operation '{operation}' for the moment: TODO.")
         
