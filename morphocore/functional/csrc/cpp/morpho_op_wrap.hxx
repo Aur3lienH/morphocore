@@ -9,16 +9,6 @@
     #include <cuda_runtime.h>
 #endif
 
-// TODO: Update the logic to save indices when more performant. (Small kernel, Small images)
-/// @brief Function to determine if indices should be saved based on input and weight tensors.
-/// @param input Input tensor of shape [batch, channels, height, width].
-/// @param weight Weight tensor of shape [out_channels, in_channels, kernel_height, kernel_width].
-/// @return True if indices should be saved, false otherwise.
-inline bool save_indices(torch::Tensor input, torch::Tensor weight)
-{
-    return false;
-}
-
 /// @brief Get the padding value for a given morphological operation and data type.
 /// @tparam Op Morphological operation type (e.g., dilation, erosion).
 /// @param dtype Data type of the tensor elements.
@@ -26,26 +16,27 @@ inline bool save_indices(torch::Tensor input, torch::Tensor weight)
 template <MORPHO_OPERATION Op>
 torch::Scalar get_padding_value(torch::ScalarType dtype)
 {
+    // Using big value and not infinity to avoid overflow
     if constexpr (Op == MORPHO_OPERATION::DILATION)
     {
         if (dtype == torch::kFloat)
         {
-            return torch::Scalar(-std::numeric_limits<float>::infinity());
+            return torch::Scalar(-1e10f);
         }
         else if (dtype == torch::kDouble)
         {
-            return torch::Scalar(-std::numeric_limits<double>::infinity());
+            return torch::Scalar(-1e10);
         }
     }
     else
     {
         if (dtype == torch::kFloat)
         {
-            return torch::Scalar(std::numeric_limits<float>::infinity());
+            return torch::Scalar(1e10f);
         }
         else if (dtype == torch::kDouble)
         {
-            return torch::Scalar(std::numeric_limits<double>::infinity());
+            return torch::Scalar(1e10);
         }
     }
 
@@ -61,7 +52,7 @@ torch::Scalar get_padding_value(torch::ScalarType dtype)
 /// @param weight Weight tensor of shape [out_channels, in_channels, kernel_height, kernel_width].
 /// @return Output tensor of shape [batch, out_channels, height, width].
 template <MORPHO_OPERATION Op, MORPHO_MERGE merge>
-torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight)
+torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight, bool save_indices)
 {
     TensorInputDim input_dim_manager(input);
     TensorWeightDim weight_dim_manager(weight);
@@ -88,6 +79,8 @@ torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradConte
     torch::Tensor output;
     torch::Tensor max_indices;
 
+    bool should_save_indices = save_indices && (merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN);
+
     if (input.is_cuda())
     {
 #ifdef WITH_CUDA
@@ -96,7 +89,15 @@ torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradConte
         weight_correct_dims = weight_correct_dims.contiguous();
 
         output = torch::zeros({batch_size, out_channels, height, width}, input_correct_dims.options());
-        max_indices = torch::zeros({batch_size}, input.options().dtype(torch::kLong));  // TODO: Fix shape when saving indices
+
+        if (should_save_indices)
+        {
+            max_indices = torch::zeros({batch_size, out_channels, height, width}, input.options().dtype(torch::kLong));
+        }
+        else
+        {
+            max_indices = torch::empty({0}, input.options().dtype(torch::kLong));
+        }
 
         auto padding_value = get_padding_value<Op>(input_correct_dims.scalar_type());
         auto padded_input = torch::constant_pad_nd(
@@ -110,10 +111,33 @@ torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradConte
         constexpr const char* operation_name = (Op == MORPHO_OPERATION::DILATION) ? "morpho_dilation_forward" : "morpho_erosion_forward";
 
         AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), operation_name, [&] {
-            morpho_forward_kernel<Op, merge, scalar_t>(padded_input.template data_ptr<scalar_t>(), weight_correct_dims.template data_ptr<scalar_t>(),
-                                                       output.template data_ptr<scalar_t>(), max_indices.template data_ptr<int64_t>(), batch_size,
-                                                       in_channels, out_channels, height, width, padded_height, padded_width, kernel_height,
-                                                       kernel_width);
+            constexpr bool merge_supports_indices = (merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN);
+
+            if constexpr (merge_supports_indices)
+            {
+                // Only compile index-saving path for MAX/MIN
+                if (should_save_indices)
+                {
+                    morpho_forward_kernel<Op, merge, scalar_t, true>(
+                        padded_input.template data_ptr<scalar_t>(), weight_correct_dims.template data_ptr<scalar_t>(),
+                        output.template data_ptr<scalar_t>(), max_indices.template data_ptr<int64_t>(), batch_size, in_channels, out_channels, height,
+                        width, padded_height, padded_width, kernel_height, kernel_width);
+                }
+                else
+                {
+                    morpho_forward_kernel<Op, merge, scalar_t, false>(
+                        padded_input.template data_ptr<scalar_t>(), weight_correct_dims.template data_ptr<scalar_t>(),
+                        output.template data_ptr<scalar_t>(), nullptr, batch_size, in_channels, out_channels, height, width, padded_height,
+                        padded_width, kernel_height, kernel_width);
+                }
+            }
+            else
+            {
+                morpho_forward_kernel<Op, merge, scalar_t, false>(
+                    padded_input.template data_ptr<scalar_t>(), weight_correct_dims.template data_ptr<scalar_t>(),
+                    output.template data_ptr<scalar_t>(), nullptr, batch_size, in_channels, out_channels, height, width, padded_height, padded_width,
+                    kernel_height, kernel_width);
+            }
         });
 
         cudaError_t err = cudaGetLastError();
@@ -131,7 +155,7 @@ torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradConte
         constexpr const char* cpu_operation_name = "morpho_operation_forward_cpu";
 
         AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), cpu_operation_name, [&] {
-            if (save_indices(input, weight))
+            if (should_save_indices)
             {
                 auto result = morpho_operation_forward_cpu_dispatcher<Op, merge, scalar_t, true>(input_correct_dims, weight_correct_dims);
                 output = std::get<0>(result);
@@ -164,7 +188,7 @@ torch::autograd::tensor_list MorphoOperation<Op, merge>::backward(torch::autogra
     auto weight = saved[1];
     auto max_indices = saved[2];
     auto grad_output = grad_outputs[0];
-
+    grad_output = grad_output.contiguous();
     torch::Tensor grad_input;
     torch::Tensor grad_weight;
     bool indices_were_saved = max_indices.numel() > 0;
@@ -187,6 +211,8 @@ torch::autograd::tensor_list MorphoOperation<Op, merge>::backward(torch::autogra
         // Create gradient tensors
         grad_input = torch::zeros_like(input);
         grad_weight = torch::zeros_like(weight);
+        grad_input.contiguous();
+        grad_weight.contiguous();
 
         // Recreate padded input for backward pass
         auto padding_value = get_padding_value<Op>(input.scalar_type());
@@ -205,11 +231,32 @@ torch::autograd::tensor_list MorphoOperation<Op, merge>::backward(torch::autogra
             // Calculate grid dimensions
             dim3 threads(16, 16);
             dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y, batch_size);
+            constexpr bool merge_supports_indices = (merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN);
 
-            morpho_backward_kernel<Op, merge, scalar_t>(padded_input.template data_ptr<scalar_t>(), weight.template data_ptr<scalar_t>(),
-                                                        grad_input.template data_ptr<scalar_t>(), grad_weight.template data_ptr<scalar_t>(),
-                                                        grad_output.template data_ptr<scalar_t>(), batch_size, in_channels, out_channels, height,
-                                                        width, padded_height, padded_width, kernel_height, kernel_width);
+            if constexpr (merge_supports_indices)
+            {
+                if (indices_were_saved)
+                {
+                    morpho_backward_kernel<Op, merge, scalar_t, true>(
+                        padded_input.template data_ptr<scalar_t>(), weight.template data_ptr<scalar_t>(), grad_input.template data_ptr<scalar_t>(),
+                        grad_weight.template data_ptr<scalar_t>(), grad_output.template data_ptr<scalar_t>(), batch_size, in_channels, out_channels,
+                        height, width, padded_height, padded_width, kernel_height, kernel_width, max_indices.template data_ptr<int64_t>());
+                }
+                else
+                {
+                    morpho_backward_kernel<Op, merge, scalar_t, false>(
+                        padded_input.template data_ptr<scalar_t>(), weight.template data_ptr<scalar_t>(), grad_input.template data_ptr<scalar_t>(),
+                        grad_weight.template data_ptr<scalar_t>(), grad_output.template data_ptr<scalar_t>(), batch_size, in_channels, out_channels,
+                        height, width, padded_height, padded_width, kernel_height, kernel_width, nullptr);
+                }
+            }
+            else
+            {
+                morpho_backward_kernel<Op, merge, scalar_t, false>(
+                    padded_input.template data_ptr<scalar_t>(), weight.template data_ptr<scalar_t>(), grad_input.template data_ptr<scalar_t>(),
+                    grad_weight.template data_ptr<scalar_t>(), grad_output.template data_ptr<scalar_t>(), batch_size, in_channels, out_channels,
+                    height, width, padded_height, padded_width, kernel_height, kernel_width, nullptr);
+            }
         });
 
         cudaError_t err = cudaGetLastError();
@@ -243,5 +290,5 @@ torch::autograd::tensor_list MorphoOperation<Op, merge>::backward(torch::autogra
         grad_weight = result[1];
     }
 
-    return {grad_input, grad_weight};
+    return {grad_input, grad_weight, torch::Tensor()};
 }

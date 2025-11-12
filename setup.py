@@ -4,7 +4,7 @@ import torch
 import sys
 from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDAExtension
 
-BASE_VERSION = "0.5.0"
+BASE_VERSION = "0.5.2"
 
 path_to_cpp = "morphocore/functional/csrc/cpp"
 path_to_cuda = "morphocore/functional/csrc/cuda"

@@ -21,14 +21,14 @@ using MorphoErosionAverage = MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_M
 /// @param weight Structuring element
 /// @param merge Merge channel mode
 /// @return Output tensor
-torch::Tensor morpho_dilation(torch::Tensor input, torch::Tensor weight, MORPHO_MERGE merge)
+torch::Tensor morpho_dilation(torch::Tensor input, torch::Tensor weight, MORPHO_MERGE merge, bool save_indices)
 {
     switch (merge)
     {
-        case MORPHO_MERGE::ADD: return MorphoDilationSum::apply(input, weight);
-        case MORPHO_MERGE::MAX: return MorphoDilationMax::apply(input, weight);
-        case MORPHO_MERGE::MIN: return MorphoDilationMin::apply(input, weight);
-        case MORPHO_MERGE::AVERAGE: return MorphoDilationAverage::apply(input, weight);
+        case MORPHO_MERGE::ADD: return MorphoDilationSum::apply(input, weight, save_indices);
+        case MORPHO_MERGE::MAX: return MorphoDilationMax::apply(input, weight, save_indices);
+        case MORPHO_MERGE::MIN: return MorphoDilationMin::apply(input, weight, save_indices);
+        case MORPHO_MERGE::AVERAGE: return MorphoDilationAverage::apply(input, weight, save_indices);
         default: TORCH_CHECK(false, "Unsupported merge operation for dilation"); return torch::Tensor();
     }
 }
@@ -38,14 +38,14 @@ torch::Tensor morpho_dilation(torch::Tensor input, torch::Tensor weight, MORPHO_
 /// @param weight Structuring element
 /// @param merge Merge channel mode
 /// @return Output tensor
-torch::Tensor morpho_erosion(torch::Tensor input, torch::Tensor weight, MORPHO_MERGE merge)
+torch::Tensor morpho_erosion(torch::Tensor input, torch::Tensor weight, MORPHO_MERGE merge, bool save_indices)
 {
     switch (merge)
     {
-        case MORPHO_MERGE::ADD: return MorphoErosionSum::apply(input, weight);
-        case MORPHO_MERGE::MAX: return MorphoErosionMax::apply(input, weight);
-        case MORPHO_MERGE::MIN: return MorphoErosionMin::apply(input, weight);
-        case MORPHO_MERGE::AVERAGE: return MorphoErosionAverage::apply(input, weight);
+        case MORPHO_MERGE::ADD: return MorphoErosionSum::apply(input, weight, save_indices);
+        case MORPHO_MERGE::MAX: return MorphoErosionMax::apply(input, weight, save_indices);
+        case MORPHO_MERGE::MIN: return MorphoErosionMin::apply(input, weight, save_indices);
+        case MORPHO_MERGE::AVERAGE: return MorphoErosionAverage::apply(input, weight, save_indices);
         default: TORCH_CHECK(false, "Unsupported merge operation for erosion"); return torch::Tensor();
     }
 }

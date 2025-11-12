@@ -48,7 +48,7 @@ def correct_morphology(image, selem, operation='dilation'):
     return result
 
 
-def dispatch_operation(operation: str, image: torch.Tensor, structuring_element: torch.Tensor, channel_merge_mode: str = 'sum'):
+def dispatch_operation(operation: str, image: torch.Tensor, structuring_element: torch.Tensor, channel_merge_mode: str = 'sum', save_indices: bool = True) -> torch.Tensor:
     input_was_2d = image.ndim == 2
     
     if input_was_2d:
@@ -59,9 +59,9 @@ def dispatch_operation(operation: str, image: torch.Tensor, structuring_element:
         out_channel = structuring_element.shape[0]
     
     if operation == 'dilation':
-        return F.dilation(x=image, w=structuring_element, channel_merge_mode=channel_merge_mode)
+        return F.dilation(x=image, w=structuring_element, channel_merge_mode=channel_merge_mode, save_indices=save_indices)
     elif operation == 'erosion':
-        return F.erosion(x=image, w=structuring_element, channel_merge_mode=channel_merge_mode)
+        return F.erosion(x=image, w=structuring_element, channel_merge_mode=channel_merge_mode, save_indices=save_indices)
     elif operation == 'Sdilation':
         return F.smorph(x=image, w=structuring_element, alpha=torch.full((out_channel, in_channel), 1000, dtype=image.dtype).to(image.device), channel_merge_mode=channel_merge_mode)
     elif operation == 'Serosion':

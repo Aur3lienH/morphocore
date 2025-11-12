@@ -2,12 +2,11 @@
 #include <torch/torch.h>
 #include "../cpp/morpho_op_enum.hpp"
 
-template <MORPHO_OPERATION Op, MORPHO_MERGE merge, typename scalar_t>
+template <MORPHO_OPERATION Op, MORPHO_MERGE merge, typename scalar_t, bool save_indices>
 void morpho_forward_kernel(const scalar_t* input, const scalar_t* weight, scalar_t* output, int64_t* max_indexes, int batch_size, int in_channels,
                            int out_channels, int height, int width, int padded_height, int padded_width, int kernel_height, int kernel_width);
 
-template <MORPHO_OPERATION Op, MORPHO_MERGE merge, typename scalar_t>
+template <MORPHO_OPERATION Op, MORPHO_MERGE merge, typename scalar_t, bool save_indices>
 void morpho_backward_kernel(const scalar_t* padded_input, const scalar_t* weight, scalar_t* grad_input, scalar_t* grad_weight,
-                            const scalar_t* grad_output, int batch_size, int in_channels, int out_channels, 
-                            int height, int width, int padded_height, int padded_width, 
-                            int kernel_height, int kernel_width);
+                            const scalar_t* grad_output, int batch_size, int in_channels, int out_channels, int height, int width, int padded_height,
+                            int padded_width, int kernel_height, int kernel_width, const int64_t* max_indexes);

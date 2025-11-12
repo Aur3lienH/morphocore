@@ -13,7 +13,7 @@ template <MORPHO_OPERATION op, MORPHO_MERGE merge>
 class MorphoOperation : public torch::autograd::Function<MorphoOperation<op, merge>>
 {
 public:
-    static torch::Tensor forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight);
+    static torch::Tensor forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight, bool save_indices);
 
     static torch::autograd::tensor_list backward(torch::autograd::AutogradContext* ctx, torch::autograd::tensor_list grad_outputs);
 

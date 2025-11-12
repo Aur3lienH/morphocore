@@ -84,7 +84,7 @@ __global__ void morpho_operation_forward_kernel(const scalar_t* padded_input, co
                                                 int kernel_width)
 {
 
-    //extern __shared__ char shared_mem[];
+    // extern __shared__ char shared_mem[];
 
     using MergePolicy = MorphoMergePolicyGPU<scalar_t, merge>;
 
@@ -140,13 +140,6 @@ __global__ void morpho_operation_forward_kernel(const scalar_t* padded_input, co
                 }
 
                 output_value = MergePolicy::merge(output_value, best_value);
-
-                int max_idx_index =
-                    b * out_channels * in_channels * height * width + o * in_channels * height * width + c * height * width + h * width + w;
-                if constexpr (false) // TODO: change to have save_indices parameter
-                {
-                    max_indexes[max_idx_index] = max_flat_index;
-                }
             }
 
             int out_idx = b * out_channels * height * width + o * height * width + h * width + w;
