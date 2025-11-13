@@ -78,8 +78,8 @@ torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradConte
 
     torch::Tensor output;
     torch::Tensor max_indices;
-
-    bool should_save_indices = save_indices && (merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN);
+    const int MAX_GRID_DIM = 65535;
+    bool should_save_indices = save_indices && (merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN) && out_channels * batch_size < MAX_GRID_DIM;
 
     if (input.is_cuda())
     {
