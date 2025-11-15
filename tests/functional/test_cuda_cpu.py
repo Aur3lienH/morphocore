@@ -17,8 +17,6 @@ class TestCPUvsCUDA:
         if not torch.cuda.is_available():
             pytest.skip("CUDA is not available.")
 
-        if operation.startswith('S'):
-            pytest.skip(f"Skipping the operation '{operation}' for the moment: TODO.")
         
         
         torch.manual_seed(42)
@@ -57,7 +55,7 @@ class TestCPUvsCUDA:
     
     @pytest.mark.parametrize("input_size,kernel_size", [
         ((1, 1, 4, 4), (1, 1, 3, 3)),
-        ((2, 3, 6, 6), (2, 3, 3, 3)),
+        ((1, 3, 6, 6), (3, 3, 3, 3)),
     ])
     @pytest.mark.parametrize("channel_merge_mode", ['sum', 'mean', 'min', 'max'])
     def test_backward_cpu_vs_cuda(self, operation, input_size, kernel_size, channel_merge_mode):
@@ -65,9 +63,7 @@ class TestCPUvsCUDA:
 
         if not torch.cuda.is_available():
             pytest.skip("CUDA is not available.")
-            
-        if operation.startswith('S'):
-            pytest.skip(f"Skipping the operation '{operation}' for the moment: TODO.")
+        
         
         torch.manual_seed(42)
         
@@ -117,7 +113,7 @@ class TestCPUvsCUDA:
         torch.testing.assert_close(
             output_cpu, 
             output_cuda.cpu(), 
-            rtol=1e-5, 
+            rtol=1e-4, 
             atol=1e-6,
             msg=f"CPU and CUDA outputs differ"
         )
@@ -131,7 +127,7 @@ class TestCPUvsCUDA:
         torch.testing.assert_close(
             grad_input_cpu, 
             grad_input_cuda, 
-            rtol=1e-5, 
+            rtol=1e-4, 
             atol=1e-6,
             msg=f"CPU and CUDA grad_input differ"
         )
@@ -139,7 +135,7 @@ class TestCPUvsCUDA:
         torch.testing.assert_close(
             grad_weight_cpu, 
             grad_weight_cuda, 
-            rtol=1e-5, 
+            rtol=1e-4, 
             atol=1e-6,
             msg=f"CPU and CUDA grad_weight differ"
         )

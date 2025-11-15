@@ -61,7 +61,7 @@ void smorph_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
                 const T* input_channel = input_ptr + b * input_batch_stride + i * input_channel_stride;
                 const T* weight_in = weight_ptr + o * weight_out_stride + i * weight_in_stride;
 
-                T reference_value = is_dilation_like ? std::numeric_limits<T>::lowest() : std::numeric_limits<T>::max();
+                T reference_value = is_dilation_like ? -std::numeric_limits<T>::infinity() : std::numeric_limits<T>::infinity();
 
                 std::vector<T> vals(kernel_height * kernel_width);
                 std::vector<bool> valid_positions(kernel_height * kernel_width, false);
@@ -211,7 +211,7 @@ void smorph_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
                 const T* input_channel = input_ptr + b * input_batch_stride + i * input_channel_stride;
                 const T* weight_in = weight_ptr + o * weight_out_stride + i * weight_in_stride;
 
-                T reference_value = is_dilation_like ? std::numeric_limits<T>::lowest() : std::numeric_limits<T>::max();
+                T reference_value = is_dilation_like ? -std::numeric_limits<T>::infinity() : std::numeric_limits<T>::infinity();
 
                 std::vector<T> vals(kernel_height * kernel_width);
                 std::vector<bool> valid_positions(kernel_height * kernel_width, false);

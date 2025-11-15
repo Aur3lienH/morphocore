@@ -1,5 +1,6 @@
 #include "smorph.cuh"
 #include "smorph_kernels.cuh"
+#include "smorph_backward.cuh"
 #include "../cpp/morpho_op_enum.hpp"
 #include <stdio.h>
 #include <torch/torch.h>
@@ -34,63 +35,44 @@ void morpho_smorph_forward_kernel(const scalar_t* input, const scalar_t* weight,
 }
 
 template <MORPHO_MERGE merge, typename scalar_t>
-void morpho_smorph_backward_kernel(const scalar_t* grad_output, scalar_t* grad_input, scalar_t* grad_weight, scalar_t* grad_alpha,
-                                   const scalar_t* alpha, const scalar_t* input, const scalar_t* weights, int batch_size, int input_channels,
-                                   int output_channels, int height, int width, int kernel_height, int kernel_width, int kernel_height_half,
-                                   int kernel_width_half)
+void morpho_smorph_backward_kernel(
+    const scalar_t* grad_output, scalar_t* grad_input, scalar_t* grad_weight, 
+    scalar_t* grad_alpha, const scalar_t* alpha, const scalar_t* input, 
+    const scalar_t* weights, int batch_size, int input_channels,
+    int output_channels, int height, int width, int kernel_height, 
+    int kernel_width, int kernel_height_half, int kernel_width_half)
 {
-    dim3 threads(TILE_WIDTH, TILE_HEIGHT, 1);
-    dim3 blocks((width + TILE_WIDTH - 1) / TILE_WIDTH, (height + TILE_HEIGHT - 1) / TILE_HEIGHT, batch_size);
+    dim3 threads(TILE_WIDTH, TILE_HEIGHT);
+    dim3 blocks(
+        (width + TILE_WIDTH - 1) / TILE_WIDTH, 
+        (height + TILE_HEIGHT - 1) / TILE_HEIGHT, 
+        batch_size
+    );
 
-    const int threads_per_block = TILE_WIDTH * TILE_HEIGHT;
     const int kernel_size = kernel_height * kernel_width;
-    size_t shared_mem_size = 2 * threads_per_block * kernel_size * sizeof(scalar_t);
-    
-    cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, 0);
-    
-    if (shared_mem_size > prop.sharedMemPerBlock)
+    const int threads_per_block = TILE_WIDTH * TILE_HEIGHT;
+
+    if constexpr (merge == MORPHO_MERGE::MIN || merge == MORPHO_MERGE::MAX)
     {
-        if (shared_mem_size <= prop.sharedMemPerBlockOptin)
-        {
-            printf("Requesting extended shared memory: %zu bytes (default: %zu, max: %zu)\n",
-                   shared_mem_size, prop.sharedMemPerBlock, prop.sharedMemPerBlockOptin);
-            
-            cudaError_t err = cudaFuncSetAttribute(
-                smorph_backward_kernel<merge, scalar_t>,
-                cudaFuncAttributeMaxDynamicSharedMemorySize,
-                shared_mem_size
-            );
-            
-            if (err != cudaSuccess)
-            {
-                printf("ERROR: Failed to set shared memory size: %s\n", cudaGetErrorString(err));
-                return;
-            }
-            
-            cudaFuncSetAttribute(
-                smorph_backward_kernel<merge, scalar_t>,
-                cudaFuncAttributePreferredSharedMemoryCarveout,
-                100
-            );
-        }
-        else
-        {
-            printf("ERROR: Shared memory required (%zu bytes) EXCEEDS device maximum (%zu bytes)!\n",
-                   shared_mem_size, prop.sharedMemPerBlockOptin);
-            printf("Kernel: %dx%d=%d, Tiles: %dx%d=%d threads, Type size: %zu bytes\n",
-                   kernel_height, kernel_width, kernel_size,
-                   TILE_WIDTH, TILE_HEIGHT, threads_per_block,
-                   sizeof(scalar_t));
-            printf("Consider: reducing TILE_WIDTH/TILE_HEIGHT or using global memory\n");
-            return;
-        }
+        const size_t shared_mem_size = threads_per_block * 
+            (2 * input_channels + 2 * input_channels * kernel_size) * sizeof(scalar_t);
+        
+        smorph_backward_minmax_kernel<merge, scalar_t><<<blocks, threads, shared_mem_size>>>(
+            grad_output, grad_input, grad_weight, grad_alpha, alpha, input,
+            weights, batch_size, input_channels, output_channels, height, width,
+            kernel_height, kernel_width, kernel_height_half, kernel_width_half
+        );
     }
-    
-    smorph_backward_kernel<merge, scalar_t><<<blocks, threads, shared_mem_size>>>(
-        grad_output, grad_input, grad_weight, grad_alpha, alpha, input,
-        weights, batch_size, input_channels, output_channels, height, width,
-        kernel_height, kernel_width, kernel_height_half, kernel_width_half);
+    else
+    {
+        const size_t shared_mem_size = threads_per_block * 2 * kernel_size * sizeof(scalar_t);
+        
+        smorph_backward_kernel<merge, scalar_t><<<blocks, threads, shared_mem_size>>>(
+            grad_output, grad_input, grad_weight, grad_alpha, alpha, input,
+            weights, batch_size, input_channels, output_channels, height, width,
+            kernel_height, kernel_width, kernel_height_half, kernel_width_half
+        );
+    }
 
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess)
@@ -98,6 +80,7 @@ void morpho_smorph_backward_kernel(const scalar_t* grad_output, scalar_t* grad_i
         printf("CUDA Error in smorph_backward: %s\n", cudaGetErrorString(err));
     }
 }
+
 
 #define INSTANTIATE_SMORPH_KERNELS(MERGE_TYPE, SCALAR_T)                                                                                             \
     template void morpho_smorph_forward_kernel<MERGE_TYPE, SCALAR_T>(                                                                                \

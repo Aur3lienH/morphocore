@@ -76,7 +76,7 @@ void smorph_scm_backward_beta(int64_t b, int64_t o, int64_t in_channels, int64_t
                 const T* input_channel = input_ptr + b * input_batch_stride + i * input_channel_stride;
                 const T* weight_in = weight_ptr + o * weight_out_stride + i * weight_in_stride;
 
-                T reference_value = is_dilation_like ? std::numeric_limits<T>::lowest() : std::numeric_limits<T>::max();
+                T reference_value = is_dilation_like ? -std::numeric_limits<T>::infinity() : std::numeric_limits<T>::infinity();
                 int64_t k = 0;
                 for (int64_t kh = 0; kh < kernel_height; kh++)
                 {
@@ -126,7 +126,7 @@ void smorph_scm_backward_beta(int64_t b, int64_t o, int64_t in_channels, int64_t
             }
 
             // --- 2. Re-compute Beta-Smorph (Outer) Forward Pass ---
-            T beta_ref = beta_positive ? std::numeric_limits<T>::lowest() : std::numeric_limits<T>::max();
+            T beta_ref = beta_positive ? -std::numeric_limits<T>::infinity() : std::numeric_limits<T>::infinity();
             for (int64_t i = 0; i < in_channels; i++)
             {
                 beta_ref = beta_positive ? std::max(channel_outputs[i], beta_ref) : std::min(channel_outputs[i], beta_ref);
@@ -260,7 +260,7 @@ void smorph_scm_backward_beta(int64_t b, int64_t o, int64_t in_channels, int64_t
 /// @param grad_beta The gradient beta tensor of shape [out_channels].
 template <typename T>
 void smorph_scm_backward_cpu(torch::Tensor input, torch::Tensor weight, torch::Tensor alpha, torch::Tensor beta, torch::Tensor grad_output,
-                         torch::Tensor grad_input, torch::Tensor grad_weight, torch::Tensor grad_alpha, torch::Tensor grad_beta)
+                             torch::Tensor grad_input, torch::Tensor grad_weight, torch::Tensor grad_alpha, torch::Tensor grad_beta)
 {
 
     const auto input_shape = input.sizes();

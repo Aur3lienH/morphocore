@@ -2,168 +2,413 @@
 #include <torch/torch.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <stdio.h>
 #include <limits>
 #include "morpho_merge_policy.cuh"
-#include "morpho_op_policy.cuh"
-#include "../cpp/morpho_op_enum.hpp"
 #include "atomic_ops.cuh"
 
-/// @brief Kernel backward complet pour smorph avec merge policy ADD
-/// Utilise shared memory pour optimiser les accès mémoire
 template <MORPHO_MERGE merge, typename scalar_t>
-__global__ void smorph_backward_kernel(const scalar_t* grad_output,  // [batch, out_channels, height, width]
-                                       scalar_t* grad_input,         // [batch, in_channels, height, width]
-                                       scalar_t* grad_weight,        // [out_channels, in_channels, kernel_h, kernel_w]
-                                       scalar_t* grad_alpha,         // [out_channels, in_channels]
-                                       const scalar_t* alpha,        // [out_channels, in_channels]
-                                       const scalar_t* input,        // [batch, in_channels, height, width]
-                                       const scalar_t* weights,      // [out_channels, in_channels, kernel_h, kernel_w]
-                                       int batch_size, int input_channels, int output_channels, int height, int width, int kernel_height,
-                                       int kernel_width, int kernel_height_half, int kernel_width_half)
+__global__ void smorph_backward_kernel(
+    const scalar_t* grad_output,
+    scalar_t* grad_input,
+    scalar_t* grad_weight,
+    scalar_t* grad_alpha,
+    const scalar_t* alpha,
+    const scalar_t* input,
+    const scalar_t* weights,
+    int batch_size, int input_channels, int output_channels,
+    int height, int width, int kernel_height, int kernel_width,
+    int kernel_height_half, int kernel_width_half)
 {
-    extern __shared__ char shared_mem[];
-
     const int b = blockIdx.z;
     const int h = blockIdx.y * blockDim.y + threadIdx.y;
     const int w = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (b >= batch_size || h >= height || w >= width) return;
-    
+    if (b >= batch_size || h >= height || w >= width)
+        return;
+
     const int kernel_size = kernel_height * kernel_width;
-
-    const int threads_per_block = blockDim.x * blockDim.y;
-    scalar_t* shared_vals = (scalar_t*)shared_mem;
-    scalar_t* shared_soft_weights = (scalar_t*)&shared_vals[threads_per_block * kernel_size];
-
-    const int tid_in_block = threadIdx.y * blockDim.x + threadIdx.x;
-    scalar_t* my_vals = &shared_vals[tid_in_block * kernel_size];
-    scalar_t* my_soft_weights = &shared_soft_weights[tid_in_block * kernel_size];
-
     const scalar_t scale_factor = (merge == MORPHO_MERGE::AVERAGE) ? 
-        static_cast<scalar_t>(1.0) / input_channels : 
+        static_cast<scalar_t>(1.0) / static_cast<scalar_t>(input_channels) : 
         static_cast<scalar_t>(1.0);
 
-    for (int co = 0; co < output_channels; co++)
+    extern __shared__ char shared_mem[];
+    
+    const int thread_id = threadIdx.y * blockDim.x + threadIdx.x;
+    const int threads_per_block = blockDim.x * blockDim.y;
+    const int vals_offset = thread_id * kernel_size;
+    const int weights_offset = vals_offset + threads_per_block * kernel_size;
+    
+    scalar_t* vals = reinterpret_cast<scalar_t*>(shared_mem) + vals_offset;
+    scalar_t* soft_weights = reinterpret_cast<scalar_t*>(shared_mem) + weights_offset;
+
+    const int input_batch_offset = b * input_channels * height * width;
+
+    for (int co = 0; co < output_channels; ++co)
     {
-        int grad_out_idx = b * output_channels * height * width + 
-                           co * height * width + h * width + w;
-        scalar_t grad_out = grad_output[grad_out_idx] * scale_factor;
+        const int grad_out_idx = b * output_channels * height * width + 
+                                 co * height * width + 
+                                 h * width + w;
+        const scalar_t grad_out = grad_output[grad_out_idx] * scale_factor;
+        
+        if (grad_out == static_cast<scalar_t>(0))
+            continue;
 
-        if (grad_out == static_cast<scalar_t>(0)) continue;
+        const int weight_out_offset = co * input_channels * kernel_height * kernel_width;
+        const int alpha_out_offset = co * input_channels;
 
-        for (int ci = 0; ci < input_channels; ci++)
+        for (int ci = 0; ci < input_channels; ++ci)
         {
-
-            int alpha_index = co * input_channels + ci;
+            const int alpha_index = alpha_out_offset + ci;
             const scalar_t alpha_val = alpha[alpha_index];
             const scalar_t abs_alpha = abs(alpha_val);
-            const bool is_dilation_like = alpha_val >= 0;
+            const bool is_dilation_like = alpha_val >= static_cast<scalar_t>(0);
+            
             scalar_t reference_value = is_dilation_like ? 
                 -std::numeric_limits<scalar_t>::infinity() : 
                  std::numeric_limits<scalar_t>::infinity();
 
-            for (int k = 0; k < kernel_size; ++k) {
-                my_vals[k] = reference_value; 
-            }
+            const int input_channel_offset = input_batch_offset + ci * height * width;
+            const int weight_in_offset = weight_out_offset + ci * kernel_height * kernel_width;
 
             int k = 0;
-            for (int kh = 0; kh < kernel_height; kh++)
+            int num_valid = 0;
+            
+            for (int kh = 0; kh < kernel_height; ++kh)
             {
-                for (int kw = 0; kw < kernel_width; kw++, k++)
+                const int ph = h + kernel_height_half - kh;
+                const bool h_valid = (ph >= 0 && ph < height);
+
+                for (int kw = 0; kw < kernel_width; ++kw, ++k)
                 {
-                    int ph = h + kernel_height_half - kh;
-                    int pw = w + kernel_width_half - kw;
-                    if (ph < 0 || ph >= height || pw < 0 || pw >= width) continue;
+                    const int pw = w + kernel_width_half - kw;
+                    const bool w_valid = (pw >= 0 && pw < width);
 
-                    if (ph >= 0 && ph < height && pw >= 0 && pw < width)
+                    if (h_valid && w_valid)
                     {
-                        int input_idx = b * input_channels * height * width + 
-                                        ci * height * width + ph * width + pw;
-                        scalar_t input_val = input[input_idx];
-
-                        int weight_idx = co * input_channels * kernel_height * kernel_width + 
-                                         ci * kernel_height * kernel_width + 
-                                         kh * kernel_width + kw;
-                        scalar_t weight_val = weights[weight_idx];
-
-                        my_vals[k] = input_val + weight_val;
+                        const scalar_t input_val = input[input_channel_offset + ph * width + pw];
+                        const scalar_t weight_val = weights[weight_in_offset + k];
+                        vals[k] = input_val + weight_val;
+                        num_valid++;
 
                         if (is_dilation_like)
                         {
-                            reference_value = max(my_vals[k], reference_value);
+                            reference_value = max(vals[k], reference_value);
                         }
                         else
                         {
-                            reference_value = min(my_vals[k], reference_value);
+                            reference_value = min(vals[k], reference_value);
                         }
+                    }
+                    else
+                    {
+                        vals[k] = static_cast<scalar_t>(0);
+                    }
+                }
+            }
+
+            if (num_valid == 0)
+                continue;
+
+            scalar_t sum = static_cast<scalar_t>(0);
+            k = 0;
+            
+            for (int kh = 0; kh < kernel_height; ++kh)
+            {
+                const int ph = h + kernel_height_half - kh;
+                const bool h_valid = (ph >= 0 && ph < height);
+
+                for (int kw = 0; kw < kernel_width; ++kw, ++k)
+                {
+                    const int pw = w + kernel_width_half - kw;
+                    const bool w_valid = (pw >= 0 && pw < width);
+
+                    if (h_valid && w_valid)
+                    {
+                        const scalar_t exp_term = is_dilation_like ? 
+                            exp((vals[k] - reference_value) * abs_alpha) : 
+                            exp((reference_value - vals[k]) * abs_alpha);
+                        soft_weights[k] = exp_term;
+                        sum += exp_term;
+                    }
+                    else
+                    {
+                        soft_weights[k] = static_cast<scalar_t>(0);
+                    }
+                }
+            }
+
+            if (sum <= static_cast<scalar_t>(1e-20))
+                continue;
+
+            scalar_t smorph_output = static_cast<scalar_t>(0);
+            k = 0;
+            
+            for (int kh = 0; kh < kernel_height; ++kh)
+            {
+                const int ph = h + kernel_height_half - kh;
+                const bool h_valid = (ph >= 0 && ph < height);
+
+                for (int kw = 0; kw < kernel_width; ++kw, ++k)
+                {
+                    const int pw = w + kernel_width_half - kw;
+                    const bool w_valid = (pw >= 0 && pw < width);
+
+                    if (h_valid && w_valid)
+                    {
+                        soft_weights[k] /= sum;
+                        smorph_output += soft_weights[k] * vals[k];
+                    }
+                }
+            }
+
+            k = 0;
+            for (int kh = 0; kh < kernel_height; ++kh)
+            {
+                const int ph = h + kernel_height_half - kh;
+                const bool h_valid = (ph >= 0 && ph < height);
+
+                for (int kw = 0; kw < kernel_width; ++kw, ++k)
+                {
+                    const int pw = w + kernel_width_half - kw;
+                    const bool w_valid = (pw >= 0 && pw < width);
+
+                    if (h_valid && w_valid)
+                    {
+                        const scalar_t p = soft_weights[k];
+                        const scalar_t val = vals[k];
+
+                        const scalar_t grad_val = p * (static_cast<scalar_t>(1.0) + alpha_val * (val - smorph_output));
+                        const scalar_t final_grad = grad_val * grad_out;
+                        
+                        const int input_idx = input_channel_offset + ph * width + pw;
+                        atomicAdd(&grad_input[input_idx], final_grad);
+
+                        const int weight_idx = weight_in_offset + k;
+                        atomicAdd(&grad_weight[weight_idx], final_grad);
+
+                        const scalar_t sign_factor = is_dilation_like ? static_cast<scalar_t>(1.0) : static_cast<scalar_t>(-1.0);
+                        const scalar_t alpha_grad_contrib = p * sign_factor * (val - reference_value) * (val - smorph_output) * grad_out;
+                        atomicAdd(&grad_alpha[alpha_index], alpha_grad_contrib);
+                    }
+                }
+            }
+        }
+    }
+}
+
+template <MORPHO_MERGE merge, typename scalar_t>
+__global__ void smorph_backward_minmax_kernel(
+    const scalar_t* grad_output,
+    scalar_t* grad_input,
+    scalar_t* grad_weight,
+    scalar_t* grad_alpha,
+    const scalar_t* alpha,
+    const scalar_t* input,
+    const scalar_t* weights,
+    int batch_size, int input_channels, int output_channels,
+    int height, int width, int kernel_height, int kernel_width,
+    int kernel_height_half, int kernel_width_half)
+{
+    const int b = blockIdx.z;
+    const int h = blockIdx.y * blockDim.y + threadIdx.y;
+    const int w = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (b >= batch_size || h >= height || w >= width)
+        return;
+
+    constexpr scalar_t tolerance = static_cast<scalar_t>(1e-6);
+    const int kernel_size = kernel_height * kernel_width;
+    const int input_batch_offset = b * input_channels * height * width;
+
+    extern __shared__ char shared_mem[];
+    
+    const int thread_id = threadIdx.y * blockDim.x + threadIdx.x;
+    const int threads_per_block = blockDim.x * blockDim.y;
+    
+    scalar_t* thread_mem = reinterpret_cast<scalar_t*>(shared_mem) + 
+                          thread_id * (2 * input_channels + 2 * input_channels * kernel_size);
+    
+    scalar_t* channel_outputs = thread_mem;
+    scalar_t* channel_reference_values = thread_mem + input_channels;
+    scalar_t* channel_vals = thread_mem + 2 * input_channels;
+    scalar_t* channel_soft_weights = channel_vals + input_channels * kernel_size;
+
+    for (int co = 0; co < output_channels; ++co)
+    {
+        const int grad_out_idx = b * output_channels * height * width + 
+                                 co * height * width + 
+                                 h * width + w;
+        const scalar_t grad_out = grad_output[grad_out_idx];
+        
+        if (grad_out == static_cast<scalar_t>(0))
+            continue;
+
+        const int weight_out_offset = co * input_channels * kernel_height * kernel_width;
+        const int alpha_out_offset = co * input_channels;
+
+        for (int ci = 0; ci < input_channels; ++ci)
+        {
+            const int alpha_index = alpha_out_offset + ci;
+            const scalar_t alpha_val = alpha[alpha_index];
+            const scalar_t abs_alpha = abs(alpha_val);
+            const bool is_dilation_like = alpha_val >= static_cast<scalar_t>(0);
+            
+            scalar_t reference_value = is_dilation_like ? 
+                -std::numeric_limits<scalar_t>::infinity() : 
+                 std::numeric_limits<scalar_t>::infinity();
+
+            const int input_channel_offset = input_batch_offset + ci * height * width;
+            const int weight_in_offset = weight_out_offset + ci * kernel_height * kernel_width;
+
+            scalar_t* vals = channel_vals + ci * kernel_size;
+            scalar_t* soft_weights = channel_soft_weights + ci * kernel_size;
+
+            int k = 0;
+            for (int kh = 0; kh < kernel_height; ++kh)
+            {
+                const int ph = h + kernel_height_half - kh;
+                const bool h_valid = (ph >= 0 && ph < height);
+
+                for (int kw = 0; kw < kernel_width; ++kw, ++k)
+                {
+                    const int pw = w + kernel_width_half - kw;
+                    const bool w_valid = (pw >= 0 && pw < width);
+
+                    if (h_valid && w_valid)
+                    {
+                        const scalar_t input_val = input[input_channel_offset + ph * width + pw];
+                        const scalar_t weight_val = weights[weight_in_offset + k];
+                        vals[k] = input_val + weight_val;
+
+                        if (is_dilation_like)
+                        {
+                            reference_value = max(vals[k], reference_value);
+                        }
+                        else
+                        {
+                            reference_value = min(vals[k], reference_value);
+                        }
+                    }
+                    else
+                    {
+                        vals[k] = static_cast<scalar_t>(0);
                     }
                 }
             }
 
             scalar_t sum = static_cast<scalar_t>(0);
-
-            for (k = 0; k < kernel_size; k++)
-            {
-                bool is_valid = is_dilation_like ? (my_vals[k] > -std::numeric_limits<scalar_t>::infinity()) : (my_vals[k] < std::numeric_limits<scalar_t>::infinity());
-                if (is_valid)
-                {
-                    scalar_t exp_term = is_dilation_like ? 
-                        exp((my_vals[k] - reference_value) * abs_alpha) : 
-                        exp((reference_value - my_vals[k]) * abs_alpha);
-                    my_soft_weights[k] = exp_term;
-                    sum += exp_term;
-                }
-                else
-                {
-                    my_soft_weights[k] = static_cast<scalar_t>(0);
-                }
-            }
+            k = 0;
             
-            if (sum > static_cast<scalar_t>(0))
+            for (int kh = 0; kh < kernel_height; ++kh)
             {
-                scalar_t inv_sum = static_cast<scalar_t>(1.0) / sum;
-                scalar_t weighted_result = static_cast<scalar_t>(0);
-                for (k = 0; k < kernel_size; k++)
+                const int ph = h + kernel_height_half - kh;
+                const bool h_valid = (ph >= 0 && ph < height);
+
+                for (int kw = 0; kw < kernel_width; ++kw, ++k)
                 {
-                    if (my_soft_weights[k] > 0) {
-                        my_soft_weights[k] *= inv_sum;
-                        weighted_result += my_soft_weights[k] * my_vals[k];
+                    const int pw = w + kernel_width_half - kw;
+                    const bool w_valid = (pw >= 0 && pw < width);
+
+                    if (h_valid && w_valid)
+                    {
+                        const scalar_t exp_term = is_dilation_like ? 
+                            exp((vals[k] - reference_value) * abs_alpha) : 
+                            exp((reference_value - vals[k]) * abs_alpha);
+                        soft_weights[k] = exp_term;
+                        sum += exp_term;
+                    }
+                    else
+                    {
+                        soft_weights[k] = static_cast<scalar_t>(0);
                     }
                 }
+            }
 
-                k = 0;
-                for (int kh = 0; kh < kernel_height; kh++)
+            scalar_t smorph_output = static_cast<scalar_t>(0);
+            for (k = 0; k < kernel_size; ++k)
+            {
+                soft_weights[k] /= sum;
+                smorph_output += soft_weights[k] * vals[k];
+            }
+
+            channel_outputs[ci] = smorph_output;
+            channel_reference_values[ci] = reference_value;
+        }
+
+        scalar_t target_value;
+        if constexpr (merge == MORPHO_MERGE::MIN)
+        {
+            target_value = std::numeric_limits<scalar_t>::infinity();
+            for (int ci = 0; ci < input_channels; ++ci)
+            {
+                target_value = min(target_value, channel_outputs[ci]);
+            }
+        }
+        else
+        {
+            target_value = -std::numeric_limits<scalar_t>::infinity();
+            for (int ci = 0; ci < input_channels; ++ci)
+            {
+                target_value = max(target_value, channel_outputs[ci]);
+            }
+        }
+
+        int num_winners = 0;
+        for (int ci = 0; ci < input_channels; ++ci)
+        {
+            if (abs(channel_outputs[ci] - target_value) < tolerance)
+            {
+                num_winners++;
+            }
+        }
+
+        const scalar_t winner_grad = grad_out / num_winners;
+
+        for (int ci = 0; ci < input_channels; ++ci)
+        {
+            if (abs(channel_outputs[ci] - target_value) < tolerance)
+            {
+                const int alpha_index = alpha_out_offset + ci;
+                const scalar_t alpha_val = alpha[alpha_index];
+                const scalar_t smorph_output = channel_outputs[ci];
+                const scalar_t reference_value = channel_reference_values[ci];
+                const bool is_dilation_like = alpha_val >= static_cast<scalar_t>(0);
+
+                const int input_channel_offset = input_batch_offset + ci * height * width;
+                const int weight_in_offset = weight_out_offset + ci * kernel_height * kernel_width;
+
+                scalar_t* vals = channel_vals + ci * kernel_size;
+                scalar_t* soft_weights = channel_soft_weights + ci * kernel_size;
+
+                int k = 0;
+                for (int kh = 0; kh < kernel_height; ++kh)
                 {
-                    for (int kw = 0; kw < kernel_width; kw++, k++)
+                    const int ph = h + kernel_height_half - kh;
+                    const bool h_valid = (ph >= 0 && ph < height);
+
+                    for (int kw = 0; kw < kernel_width; ++kw, ++k)
                     {
-                        if (my_soft_weights[k] <= 0) continue;
+                        const int pw = w + kernel_width_half - kw;
+                        const bool w_valid = (pw >= 0 && pw < width);
 
-                        int ph = h + kernel_height_half - kh;
-                        int pw = w + kernel_width_half - kw;
-                        if (ph < 0 || ph >= height || pw < 0 || pw >= width) continue;
+                        if (h_valid && w_valid && soft_weights[k] > static_cast<scalar_t>(0))
+                        {
+                            const scalar_t p = soft_weights[k];
+                            const scalar_t val = vals[k];
 
-                        scalar_t p = my_soft_weights[k];
-                        scalar_t val = my_vals[k];
+                            const scalar_t grad_val = p * (static_cast<scalar_t>(1.0) + alpha_val * (val - smorph_output));
+                            const scalar_t final_grad = grad_val * winner_grad;
+                            
+                            const int input_idx = input_channel_offset + ph * width + pw;
+                            atomicAdd(&grad_input[input_idx], final_grad);
 
-                        const scalar_t grad_val = p + alpha_val * p * (val - weighted_result);
-                        scalar_t final_grad = grad_val * grad_out;
-                        
-                    
+                            const int weight_idx = weight_in_offset + k;
+                            atomicAdd(&grad_weight[weight_idx], final_grad);
 
-                        
-                        
-                        int input_idx = b * input_channels * height * width + 
-                                       ci * height * width + ph * width + pw;
-                        atomicAdd(&grad_input[input_idx], final_grad);
-
-                        int weight_idx = co * input_channels * kernel_height * kernel_width + 
-                                        ci * kernel_height * kernel_width + 
-                                        kh * kernel_width + kw;
-                        atomicAdd(&grad_weight[weight_idx], final_grad);
-
-                        scalar_t grad_alpha_term = p * (val - reference_value) * (val - weighted_result) * grad_out;
-                        atomicAdd(&grad_alpha[alpha_index], grad_alpha_term);
+                            const scalar_t sign_factor = is_dilation_like ? static_cast<scalar_t>(1.0) : static_cast<scalar_t>(-1.0);
+                            const scalar_t alpha_grad_contrib = p * sign_factor * (val - reference_value) * (val - smorph_output) * winner_grad;
+                            atomicAdd(&grad_alpha[alpha_index], alpha_grad_contrib);
+                        }
                     }
                 }
             }

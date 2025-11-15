@@ -112,36 +112,17 @@ torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradCo
         auto kernel_height_half = kernel_height / 2;
         auto kernel_width_half = kernel_width / 2;
 
-        // Move tensors to CPU
-        // auto input_cpu = input.to(torch::kCPU);
-        // auto weight_cpu = weight.to(torch::kCPU);
-        // auto alpha_cpu = alpha.to(torch::kCPU);
-        // auto grad_output_cpu = grad_outputs[0].to(torch::kCPU);
-
-        // // Create gradient tensors on CPU
-        // torch::Tensor grad_input_cpu = torch::zeros_like(input_cpu);
-        // torch::Tensor grad_weight_cpu = torch::zeros_like(weight_cpu);
-        // torch::Tensor grad_alpha_cpu = torch::zeros_like(alpha_cpu);
-
-        // // Run CPU backward
-        // AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_backward_cpu", [&] {
-        //     smorph_backward_cpu<merge, scalar_t>(input_cpu, weight_cpu, alpha_cpu.item<scalar_t>(), grad_output_cpu, grad_input_cpu,
-        //     grad_weight_cpu,
-        //                                          grad_alpha_cpu);
-        // });
-
-        // // Move gradients back to CUDA
-        // grad_input = grad_input_cpu.to(input.device());
-        // grad_weight = grad_weight_cpu.to(weight.device());
-        // grad_alpha = grad_alpha_cpu.to(alpha.device());
-
-        // return {grad_input, grad_weight, grad_alpha};
+        // Ensure contiguous memory layout because CUDA is **** !
+        auto input_contig = input.contiguous();
+        auto weight_contig = weight.contiguous();
+        auto alpha_contig = alpha.contiguous();
+        auto grad_output_contig = grad_outputs[0].contiguous();
 
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_backward_kernel", ([&] {
                                        morpho_smorph_backward_kernel<merge, scalar_t>(
-                                           grad_outputs[0].data_ptr<scalar_t>(), grad_input.data_ptr<scalar_t>(), grad_weight.data_ptr<scalar_t>(),
-                                           grad_alpha.data_ptr<scalar_t>(), alpha.data_ptr<scalar_t>(), input.data_ptr<scalar_t>(),
-                                           weight.data_ptr<scalar_t>(), batch_size, in_channels, out_channels, height, width, kernel_height,
+                                           grad_output_contig.data_ptr<scalar_t>(), grad_input.data_ptr<scalar_t>(), grad_weight.data_ptr<scalar_t>(),
+                                           grad_alpha.data_ptr<scalar_t>(), alpha_contig.data_ptr<scalar_t>(), input_contig.data_ptr<scalar_t>(),
+                                           weight_contig.data_ptr<scalar_t>(), batch_size, in_channels, out_channels, height, width, kernel_height,
                                            kernel_width, kernel_height_half, kernel_width_half);
                                    }));
 
