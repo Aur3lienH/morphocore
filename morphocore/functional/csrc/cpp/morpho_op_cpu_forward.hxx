@@ -11,6 +11,7 @@
 #include "morpho_op_enum.hpp"
 #include "morpho_merge_policy.hpp"
 #include "morpho_op_policy.hpp"
+#include "morpho_op_cpu_forward_linear.hxx"
 
 // TODO: Dispatch for the kernel sizes 3x3, 5x5, 7x7 for better performance
 /// @brief Dispatches to the most optimized forward morphological operation implementation based on kernel size.
@@ -42,6 +43,11 @@ auto morpho_operation_forward_cpu_dispatcher(torch::Tensor input, torch::Tensor 
     // {
     //     return morpho_operation_forward_cpu_template<op, merge, T, save_index, 7>(input, weight);
     // }
+
+    if (merge == MORPHO_MERGE::IDENTITY)
+    {
+        return morpho_operation_forward_identity_cpu<op, T, save_index>(input, weight);
+    }
 
     return morpho_operation_forward_cpu<op, merge, T, save_index>(input, weight);
 }
@@ -110,7 +116,7 @@ auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight)
 
 #pragma omp parallel
     {
-#pragma omp for schedule(guided) collapse(3)
+#pragma omp for schedule(guided) collapse(2)
         for (int64_t b = 0; b < batch_size; b++)
         {
             for (int64_t o = 0; o < out_channels; o++)

@@ -72,9 +72,6 @@ void morpho_backward_kernel(const scalar_t* padded_input, const scalar_t* weight
                               (height + threads.y - 1) / threads.y,
                               batch_size * out_channels);
 
-        // Call the new combined kernel
-        // (Assuming it's named 'morpho_operation_backward_kernel_indices_OPTIMIZED'
-        // and located in 'morpho_op_kernel_backward_index.cuh')
         morpho_operation_backward_kernel_indices<Op, merge, scalar_t>
             <<<blocks_optimized, threads>>>(max_indexes, grad_input, grad_weight, grad_output,
                                             batch_size, in_channels, out_channels, height,

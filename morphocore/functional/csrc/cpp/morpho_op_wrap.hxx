@@ -62,8 +62,9 @@ torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradConte
     auto input_shape = input_correct_dims.sizes();
     auto weight_shape = weight_correct_dims.sizes();
     auto batch_size = input_shape[0];
-    auto in_channels = input_shape[1];
-    auto out_channels = weight_shape[0];
+    int64_t in_channels = input_shape[1];
+    int64_t out_channels = weight_shape[0];
+
     auto height = input_shape[2];
     auto width = input_shape[3];
     auto kernel_height = weight_shape[2];
@@ -72,9 +73,9 @@ torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradConte
     auto kernel_width_half = kernel_width / 2;
 
     // Validation checks
-    // TORCH_CHECK(input.dim() == 4, "Input must be a 4d tensor (batch_size, in_channels, height, width)");
-    // TORCH_CHECK(weight.dim() == 4, "Weight must be a 4d tensor (out_channels, in_channels, kernel_height, kernel_width)");
-    // TORCH_CHECK(input_shape[1] == weight_shape[1], "Input channels must match weight input channels");
+    TORCH_CHECK(input_correct_dims.dim() == 4, "Input must be a 4d tensor (batch_size, in_channels, height, width)");
+    TORCH_CHECK(weight_correct_dims.dim() == 4, "Weight must be a 4d tensor (out_channels, in_channels, kernel_height, kernel_width)");
+    TORCH_CHECK(input_shape[1] == weight_shape[1] || merge == MORPHO_MERGE::IDENTITY, "Input channels must match weight input channels");
 
     torch::Tensor output;
     torch::Tensor max_indices;
@@ -112,16 +113,28 @@ torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradConte
 
         AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), operation_name, [&] {
             constexpr bool merge_supports_indices = (merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN);
-
-            if constexpr (merge_supports_indices)
+            if constexpr (merge == MORPHO_MERGE::IDENTITY)
             {
-                // Only compile index-saving path for MAX/MIN
-                if (should_save_indices)
+                TORCH_CHECK(false, "Linear merge not supported in CUDA yet");
+            }
+            else
+            {
+                if constexpr (merge_supports_indices)
                 {
-                    morpho_forward_kernel<Op, merge, scalar_t, true>(
-                        padded_input.template data_ptr<scalar_t>(), weight_correct_dims.template data_ptr<scalar_t>(),
-                        output.template data_ptr<scalar_t>(), max_indices.template data_ptr<int64_t>(), batch_size, in_channels, out_channels, height,
-                        width, padded_height, padded_width, kernel_height, kernel_width);
+                    if (should_save_indices)
+                    {
+                        morpho_forward_kernel<Op, merge, scalar_t, true>(
+                            padded_input.template data_ptr<scalar_t>(), weight_correct_dims.template data_ptr<scalar_t>(),
+                            output.template data_ptr<scalar_t>(), max_indices.template data_ptr<int64_t>(), batch_size, in_channels, out_channels,
+                            height, width, padded_height, padded_width, kernel_height, kernel_width);
+                    }
+                    else
+                    {
+                        morpho_forward_kernel<Op, merge, scalar_t, false>(
+                            padded_input.template data_ptr<scalar_t>(), weight_correct_dims.template data_ptr<scalar_t>(),
+                            output.template data_ptr<scalar_t>(), nullptr, batch_size, in_channels, out_channels, height, width, padded_height,
+                            padded_width, kernel_height, kernel_width);
+                    }
                 }
                 else
                 {
@@ -130,13 +143,6 @@ torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradConte
                         output.template data_ptr<scalar_t>(), nullptr, batch_size, in_channels, out_channels, height, width, padded_height,
                         padded_width, kernel_height, kernel_width);
                 }
-            }
-            else
-            {
-                morpho_forward_kernel<Op, merge, scalar_t, false>(
-                    padded_input.template data_ptr<scalar_t>(), weight_correct_dims.template data_ptr<scalar_t>(),
-                    output.template data_ptr<scalar_t>(), nullptr, batch_size, in_channels, out_channels, height, width, padded_height, padded_width,
-                    kernel_height, kernel_width);
             }
         });
 
@@ -193,6 +199,15 @@ torch::autograd::tensor_list MorphoOperation<Op, merge>::backward(torch::autogra
     torch::Tensor grad_weight;
     bool indices_were_saved = max_indices.numel() > 0;
 
+    std::vector<int64_t> expected_grad_shape = input.sizes().vec();
+    expected_grad_shape[1] = weight.sizes()[0];
+    TORCH_CHECK(grad_output.sizes() == expected_grad_shape, "grad_output shape mismatch: expected [", expected_grad_shape, "] but got [",
+                grad_output.sizes(), "]");
+
+    TORCH_CHECK(grad_output.device() == input.device(), "grad_output must be on the same device as input");
+
+    TORCH_CHECK(grad_output.scalar_type() == input.scalar_type(), "grad_output must have the same dtype as input");
+
     if (input.is_cuda())
     {
 #ifdef WITH_CUDA
@@ -232,15 +247,30 @@ torch::autograd::tensor_list MorphoOperation<Op, merge>::backward(torch::autogra
             dim3 threads(16, 16);
             dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y, batch_size);
             constexpr bool merge_supports_indices = (merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN);
-
-            if constexpr (merge_supports_indices)
+            if constexpr (merge == MORPHO_MERGE::IDENTITY)
             {
-                if (indices_were_saved)
+                TORCH_CHECK(false, "Linear merge not supported in CUDA yet");
+            }
+            else
+            {
+                if constexpr (merge_supports_indices)
                 {
-                    morpho_backward_kernel<Op, merge, scalar_t, true>(
-                        padded_input.template data_ptr<scalar_t>(), weight.template data_ptr<scalar_t>(), grad_input.template data_ptr<scalar_t>(),
-                        grad_weight.template data_ptr<scalar_t>(), grad_output.template data_ptr<scalar_t>(), batch_size, in_channels, out_channels,
-                        height, width, padded_height, padded_width, kernel_height, kernel_width, max_indices.template data_ptr<int64_t>());
+                    if (indices_were_saved)
+                    {
+                        morpho_backward_kernel<Op, merge, scalar_t, true>(
+                            padded_input.template data_ptr<scalar_t>(), weight.template data_ptr<scalar_t>(),
+                            grad_input.template data_ptr<scalar_t>(), grad_weight.template data_ptr<scalar_t>(),
+                            grad_output.template data_ptr<scalar_t>(), batch_size, in_channels, out_channels, height, width, padded_height,
+                            padded_width, kernel_height, kernel_width, max_indices.template data_ptr<int64_t>());
+                    }
+                    else
+                    {
+                        morpho_backward_kernel<Op, merge, scalar_t, false>(
+                            padded_input.template data_ptr<scalar_t>(), weight.template data_ptr<scalar_t>(),
+                            grad_input.template data_ptr<scalar_t>(), grad_weight.template data_ptr<scalar_t>(),
+                            grad_output.template data_ptr<scalar_t>(), batch_size, in_channels, out_channels, height, width, padded_height,
+                            padded_width, kernel_height, kernel_width, nullptr);
+                    }
                 }
                 else
                 {
@@ -249,13 +279,6 @@ torch::autograd::tensor_list MorphoOperation<Op, merge>::backward(torch::autogra
                         grad_weight.template data_ptr<scalar_t>(), grad_output.template data_ptr<scalar_t>(), batch_size, in_channels, out_channels,
                         height, width, padded_height, padded_width, kernel_height, kernel_width, nullptr);
                 }
-            }
-            else
-            {
-                morpho_backward_kernel<Op, merge, scalar_t, false>(
-                    padded_input.template data_ptr<scalar_t>(), weight.template data_ptr<scalar_t>(), grad_input.template data_ptr<scalar_t>(),
-                    grad_weight.template data_ptr<scalar_t>(), grad_output.template data_ptr<scalar_t>(), batch_size, in_channels, out_channels,
-                    height, width, padded_height, padded_width, kernel_height, kernel_width, nullptr);
             }
         });
 
@@ -278,11 +301,11 @@ torch::autograd::tensor_list MorphoOperation<Op, merge>::backward(torch::autogra
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), cpu_operation_name, [&] {
             if (indices_were_saved)
             {
-                result = morpho_operation_backward_cpu<Op, merge, scalar_t, true>(input, weight, grad_output, max_indices);
+                result = morpho_operation_backward_cpu_dispatch<Op, merge, scalar_t, true>(input, weight, grad_output, max_indices);
             }
             else
             {
-                result = morpho_operation_backward_cpu<Op, merge, scalar_t, false>(input, weight, grad_output, max_indices);
+                result = morpho_operation_backward_cpu_dispatch<Op, merge, scalar_t, false>(input, weight, grad_output, max_indices);
             }
         });
 

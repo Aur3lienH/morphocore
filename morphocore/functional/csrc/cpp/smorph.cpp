@@ -3,6 +3,8 @@
 #include "../cpp/morpho_op_enum.hpp"
 #include <torch/torch.h>
 #include "reshaper.hpp"
+#include "smorph_cpu_forward_identity.hxx"
+#include "smorph_cpu_backward_identity.hxx"
 
 #ifdef WITH_CUDA
     #include <cuda_runtime.h>
@@ -28,10 +30,8 @@ torch::Tensor Smorph<merge>::forward(torch::autograd::AutogradContext* ctx, torc
     auto input_shape = input_correct_dims.sizes();
     auto weight_shape = weight_correct_dims.sizes();
 
-    // TORCH_CHECK(input.dim() == 4, "Input must be a 4d tensor (batch_size, in_channels, height, width)");
-    // TORCH_CHECK(weight.dim() == 4, "Weight must be a 4d tensor (out_channels, in_channels, kernel_height, kernel_width)");
-    // TORCH_CHECK(input_shape[1] == weight_shape[1], "Input channels must match weight input channels");
-    // TORCH_CHECK(input.sizes()[1] == 1, "Input Channels different to 1 not yet implemented!");
+    TORCH_CHECK(input_correct_dims.dim() == 4, "Input must be a 4d tensor (batch_size, in_channels, height, width)");
+    TORCH_CHECK(weight_correct_dims.dim() == 4, "Weight must be a 4d tensor (out_channels, in_channels, kernel_height, kernel_width)");
 
     if (input.is_cuda())
     {
@@ -52,11 +52,18 @@ torch::Tensor Smorph<merge>::forward(torch::autograd::AutogradContext* ctx, torc
         torch::Tensor reference_values = torch::zeros({batch_size, weight_shape[0], height, width}, input.options());
         torch::Tensor max_values = torch::zeros({batch_size, weight_shape[0], height, width}, input.options());
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_forward_kernel", ([&] {
-                                       morpho_smorph_forward_kernel<merge, scalar_t>(
-                                           input_correct_dims.data_ptr<scalar_t>(), weight_correct_dims.data_ptr<scalar_t>(),
-                                           alpha.data_ptr<scalar_t>(), output.data_ptr<scalar_t>(), reference_values.data_ptr<scalar_t>(),
-                                           max_values.data_ptr<scalar_t>(), batch_size, in_channels, out_channels, height, width, kernel_height,
-                                           kernel_width, kernel_height_half, kernel_width_half);
+                                       if (merge == MORPHO_MERGE::IDENTITY)
+                                       {
+                                           TORCH_CHECK(false, "Identity merge not supported in CUDA yet");
+                                       }
+                                       else
+                                       {
+                                           morpho_smorph_forward_kernel<merge, scalar_t>(
+                                               input_correct_dims.data_ptr<scalar_t>(), weight_correct_dims.data_ptr<scalar_t>(),
+                                               alpha.data_ptr<scalar_t>(), output.data_ptr<scalar_t>(), reference_values.data_ptr<scalar_t>(),
+                                               max_values.data_ptr<scalar_t>(), batch_size, in_channels, out_channels, height, width, kernel_height,
+                                               kernel_width, kernel_height_half, kernel_width_half);
+                                       }
                                    }));
         output = input_dim_manager.ToOriginalTensor(output);
         ctx->save_for_backward({output, reference_values, max_values, alpha, input_correct_dims, weight_correct_dims});
@@ -68,8 +75,16 @@ torch::Tensor Smorph<merge>::forward(torch::autograd::AutogradContext* ctx, torc
         torch::Tensor output = torch::zeros({input_shape[0], weight_shape[0], input_shape[2], input_shape[3]}, input.options());
         torch::Tensor reference_values = torch::zeros({input_shape[0], weight_shape[0], input_shape[2], input_shape[3]}, input.options());
         torch::Tensor max_values = torch::zeros({input_shape[0], weight_shape[0], input_shape[2], input_shape[3]}, input.options());
-        AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), "smorph_forward_cpu",
-                                   [&] { output = smorph_forward_cpu<merge, scalar_t>(input_correct_dims, weight_correct_dims, alpha); });
+        AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), "smorph_forward_cpu", [&] {
+            if (merge == MORPHO_MERGE::IDENTITY)
+            {
+                output = smorph_forward_cpu_identity<scalar_t>(input_correct_dims, weight_correct_dims, alpha);
+            }
+            else
+            {
+                output = smorph_forward_cpu<merge, scalar_t>(input_correct_dims, weight_correct_dims, alpha);
+            }
+        });
         output = input_dim_manager.ToOriginalTensor(output);
         ctx->save_for_backward({output, reference_values, max_values, alpha, input_correct_dims, weight_correct_dims});
         return output;
@@ -119,11 +134,18 @@ torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradCo
         auto grad_output_contig = grad_outputs[0].contiguous();
 
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_backward_kernel", ([&] {
-                                       morpho_smorph_backward_kernel<merge, scalar_t>(
-                                           grad_output_contig.data_ptr<scalar_t>(), grad_input.data_ptr<scalar_t>(), grad_weight.data_ptr<scalar_t>(),
-                                           grad_alpha.data_ptr<scalar_t>(), alpha_contig.data_ptr<scalar_t>(), input_contig.data_ptr<scalar_t>(),
-                                           weight_contig.data_ptr<scalar_t>(), batch_size, in_channels, out_channels, height, width, kernel_height,
-                                           kernel_width, kernel_height_half, kernel_width_half);
+                                       if (merge == MORPHO_MERGE::IDENTITY)
+                                       {
+                                           TORCH_CHECK(false, "Identity merge not supported in CUDA yet");
+                                       }
+                                       else
+                                       {
+                                           morpho_smorph_backward_kernel<merge, scalar_t>(
+                                               grad_output_contig.data_ptr<scalar_t>(), grad_input.data_ptr<scalar_t>(),
+                                               grad_weight.data_ptr<scalar_t>(), grad_alpha.data_ptr<scalar_t>(), alpha_contig.data_ptr<scalar_t>(),
+                                               input_contig.data_ptr<scalar_t>(), weight_contig.data_ptr<scalar_t>(), batch_size, in_channels,
+                                               out_channels, height, width, kernel_height, kernel_width, kernel_height_half, kernel_width_half);
+                                       }
                                    }));
 
         cudaError_t err = cudaGetLastError();
@@ -137,7 +159,14 @@ torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradCo
     else
     {
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_backward_cpu", [&] {
-            smorph_backward_cpu<merge, scalar_t>(input, weight, alpha, grad_outputs[0], grad_input, grad_weight, grad_alpha);
+            if (merge == MORPHO_MERGE::IDENTITY)
+            {
+                smorph_backward_cpu_identity<scalar_t>(input, weight, alpha, grad_outputs[0], grad_input, grad_weight, grad_alpha);
+            }
+            else
+            {
+                smorph_backward_cpu<merge, scalar_t>(input, weight, alpha, grad_outputs[0], grad_input, grad_weight, grad_alpha);
+            }
         });
         return {grad_input, grad_weight, grad_alpha};
     }
@@ -148,6 +177,7 @@ template class Smorph<MORPHO_MERGE::MIN>;
 template class Smorph<MORPHO_MERGE::MAX>;
 template class Smorph<MORPHO_MERGE::AVERAGE>;
 template class Smorph<MORPHO_MERGE::ADD>;
+template class Smorph<MORPHO_MERGE::IDENTITY>;
 
 // ----------------------------------SMORPH FORWARD PASS CPU----------------------------------------
 
@@ -162,6 +192,9 @@ INSTANTIATE_SMORPH_FORWARD(MIN, double)
 INSTANTIATE_SMORPH_FORWARD(MAX, double)
 INSTANTIATE_SMORPH_FORWARD(AVERAGE, double)
 INSTANTIATE_SMORPH_FORWARD(ADD, double)
+
+template torch::Tensor smorph_forward_cpu_identity<float>(torch::Tensor, torch::Tensor, torch::Tensor);
+template torch::Tensor smorph_forward_cpu_identity<double>(torch::Tensor, torch::Tensor, torch::Tensor);
 
 // ----------------------------------SMORPH FORWARD PASS CPU----------------------------------------
 
@@ -179,5 +212,10 @@ INSTANTIATE_SMORPH_BACKWARD(MIN, double)
 INSTANTIATE_SMORPH_BACKWARD(MAX, double)
 INSTANTIATE_SMORPH_BACKWARD(AVERAGE, double)
 INSTANTIATE_SMORPH_BACKWARD(ADD, double)
+
+template void smorph_backward_cpu_identity<float>(torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor,
+                                                  torch::Tensor);
+template void smorph_backward_cpu_identity<double>(torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor,
+                                                   torch::Tensor);
 
 // ----------------------------------SMORPH BACKWARD PASS CPU----------------------------------------

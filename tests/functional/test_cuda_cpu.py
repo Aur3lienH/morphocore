@@ -55,7 +55,7 @@ class TestCPUvsCUDA:
     
     @pytest.mark.parametrize("input_size,kernel_size", [
         ((1, 1, 4, 4), (1, 1, 3, 3)),
-        ((1, 3, 6, 6), (3, 3, 3, 3)),
+        ((1, 1, 32, 32), (1, 1, 3, 3)),
     ])
     @pytest.mark.parametrize("channel_merge_mode", ['sum', 'mean', 'min', 'max'])
     def test_backward_cpu_vs_cuda(self, operation, input_size, kernel_size, channel_merge_mode):

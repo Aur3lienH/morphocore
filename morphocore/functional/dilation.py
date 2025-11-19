@@ -11,4 +11,4 @@ def dilation(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum', 
         w (torch.Tensor): weight
         channel_merge_mode (str): channel merge mode
     """
-    return morpho_dilation(x, w.flip((-2, -1)), str_to_merge(channel_merge_mode), save_indices)
+    return morpho_dilation(x, w, str_to_merge(channel_merge_mode), save_indices)

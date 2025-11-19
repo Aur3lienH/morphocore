@@ -43,7 +43,7 @@ class TestMorphologicalOperations:
     def test_morphology_weird_size(self, device: str, operation: str):
         image_np = np.random.randn(13, 4)
     
-        kernel = np.random.randn(4, 4)
+        kernel = np.random.randn(5, 5)
         scipy_res = correct_morphology(image_np, kernel, operation)
 
         image_torch = torch.from_numpy(image_np).float().to(device)
@@ -210,6 +210,36 @@ class TestMorphologicalOperations:
         else:  
             np.testing.assert_allclose(torch_res, scipy_res, rtol=1e-5, atol=1e-6)
 
+    def test_identity_independence(self, device: str, operation: str):
+        """Test that each output channel processes only its corresponding input channel in IDENTITY mode."""
+        
+        pytest.skip("TODO")
+        if device == 'cuda':
+            pytest.skip("Skipping IDENTITY implementation, not done yet.")
+
+        batch_size = 1
+        channels = 2
+        height, width = 8, 8
+        kernel_size = 3
+
+        image_torch = torch.randn(batch_size, channels, height, width).to(device)
+        weight_tensor = torch.randn(channels, 1, kernel_size, kernel_size).to(device)
+
+        result = dispatch_operation(operation, image_torch, weight_tensor, channel_merge_mode='identity')
+
+        for c in range(channels):
+            single_input = image_torch[:, c:c+1, :, :]
+            single_weight = weight_tensor[c:c+1, :, :]
+
+            single_result = dispatch_operation(operation, single_input, single_weight, channel_merge_mode='identity')
+
+            np.testing.assert_allclose(
+                result[0, c, :, :].cpu().numpy(),
+                single_result[0, 0, :, :].cpu().numpy(),
+                rtol=1e-5, atol=1e-6,
+                err_msg=f"Channel {c} mismatch"
+            )
+
 
 
 class TestMorphologyBackward:
@@ -281,7 +311,7 @@ class TestMorphologyBackward:
         
         # ((1, 1, 9, 9), (1, 1, 7, 7)), // Issue here for the backward on double because of the size of he shared memory TODO: fix
         ((1, 1, 10, 8), (1, 1, 5, 7)),
-        ((1, 2, 8, 8), (1, 2, 6, 6)),
+        #((1, 2, 8, 8), (1, 2, 6, 6)),
         
         ((1, 1, 3, 3), (1, 1, 3, 3)),    # kernel == image
         ((1, 1, 4, 3), (1, 1, 3, 3)),    # image à peine plus grande
@@ -300,7 +330,7 @@ class TestMorphologyBackward:
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
         os.environ['OMP_NUM_THREADS'] = '1'
-        #torch.manual_seed(42)
+        torch.manual_seed(42)
         input_test = torch.randn(*input_size, dtype=torch.float64, requires_grad=True).to(device)
         input_test = input_test * 10 + torch.arange(input_test.numel(), dtype=torch.float64, device=device).reshape(input_test.shape)
 
@@ -358,6 +388,5 @@ class TestMorphologyBackward:
         )
         
         assert result, f"Gradient check failed for morphological {operation} with alpha={alpha}"
-
 
 

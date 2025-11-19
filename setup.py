@@ -4,7 +4,7 @@ import torch
 import sys
 from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDAExtension
 
-BASE_VERSION = "0.6.0"
+BASE_VERSION = "0.7.0"
 
 path_to_cpp = "morphocore/functional/csrc/cpp"
 path_to_cuda = "morphocore/functional/csrc/cuda"
@@ -22,7 +22,7 @@ if sys.platform.startswith('linux'):
     cxx_flags = ['-O3', '-DNDEBUG', '-std=c++17', '-fopenmp', '-Wno-unused-variable']
     link_args = ['-fopenmp']
 elif sys.platform.startswith('darwin'):
-    cxx_flags = ['-O3', '-DNDEBUG', '-std=c++17', '-ffast-math']
+    cxx_flags = ['-O3', '-DNDEBUG', '-std=c++17']
     link_args = ['-lomp']
 elif sys.platform.startswith('win'):
     cxx_flags = ['/O2', '/DNDEBUG', '/std:c++17', '/openmp']
@@ -30,7 +30,7 @@ elif sys.platform.startswith('win'):
 else:
     cxx_flags = ['-O2', '-std=c++17']
     link_args = []
-
+cxx_flags
 torch_version = os.environ.get("TORCH_VERSION", torch.__version__.split('+')[0])
 version = BASE_VERSION + "." + torch_version.replace(".", "")
 

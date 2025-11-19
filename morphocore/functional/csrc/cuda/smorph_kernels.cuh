@@ -1,8 +1,8 @@
 #pragma once
 #include "../cpp/morpho_op_enum.hpp"
 
-const int TILE_WIDTH = 8;
-const int TILE_HEIGHT = 8;
+const int TILE_WIDTH = 16;
+const int TILE_HEIGHT = 16;
 
 template <MORPHO_MERGE merge, typename scalar_t>
 __global__ void smorph_forward_kernel(

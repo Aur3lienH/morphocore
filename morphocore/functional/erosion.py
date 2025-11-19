@@ -12,4 +12,4 @@ def erosion(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum', s
         w (torch.Tensor): weight
         channel_merge_mode (str): channel merge mode
     """
-    return morpho_erosion(x, w, str_to_merge(channel_merge_mode), save_indices)
+    return morpho_erosion(x, w.flip((-2, -1)), str_to_merge(channel_merge_mode), save_indices)

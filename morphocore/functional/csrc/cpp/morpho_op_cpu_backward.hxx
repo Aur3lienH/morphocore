@@ -7,6 +7,7 @@
 
 #include "morpho_op_enum.hpp"
 #include "morpho_op_policy.hpp"
+#include "morpho_op_cpu_backward_linear.hxx"
 
 // This function should be inlined because of the number of arguments and it is in a hot loop !
 /// @brief Core backward implementation for sum/average merge policies on CPU for morphological operations.
@@ -354,4 +355,29 @@ torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, 
         }
     }
     return {grad_input, grad_weight};
+}
+
+/// @brief Backward pass dispatcher for morphological operations on CPU.
+/// Chooses between standard backward and linear/identity backward based on merge policy.
+/// @tparam T The data type of the tensor elements.
+/// @tparam op The morphological operation type (e.g., dilation, erosion).
+/// @tparam merge The merge strategy for combining gradients.
+/// @tparam save_index Whether to save the indices of the max values.
+/// @param input The input tensor.
+/// @param weight The weight tensor.
+/// @param grad_output The gradient output tensor.
+/// @param max_indices The indices of the max values.
+/// @return The gradient tensors for the input and weight.
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index>
+torch::autograd::tensor_list morpho_operation_backward_cpu_dispatch(torch::Tensor input, torch::Tensor weight, torch::Tensor grad_output,
+                                                                    torch::Tensor max_indices)
+{
+    if constexpr (merge == MORPHO_MERGE::IDENTITY)
+    {
+        return morpho_operation_backward_identity_cpu<op, T, save_index>(input, weight, grad_output, max_indices);
+    }
+    else
+    {
+        return morpho_operation_backward_cpu<op, merge, T, save_index>(input, weight, grad_output, max_indices);
+    }
 }

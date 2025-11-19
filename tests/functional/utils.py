@@ -18,11 +18,12 @@ def correct_morphology(image, selem, operation='dilation'):
         padded = np.pad(image, ((pad_h, pad_h), (pad_w, pad_w)), mode='constant', constant_values=-np.inf)
         result = np.full_like(image, -np.inf)
         op_func = np.maximum
-        selem = np.flip(selem, axis=(-2, -1))
+
     elif operation == 'erosion' or operation == 'Serosion':
         padded = np.pad(image, ((pad_h, pad_h), (pad_w, pad_w)), mode='constant', constant_values=np.inf)
         result = np.full_like(image, np.inf)
         op_func = np.minimum
+        selem = np.flip(selem, axis=(-2, -1))
     else:
         raise ValueError(f"Unknown operation: {operation}")
 
@@ -63,8 +64,12 @@ def dispatch_operation(operation: str, image: torch.Tensor, structuring_element:
     elif operation == 'erosion':
         return F.erosion(x=image, w=structuring_element, channel_merge_mode=channel_merge_mode, save_indices=save_indices)
     elif operation == 'Sdilation':
+        if channel_merge_mode == 'identity':
+            return F.smorph(x=image, w=structuring_element, alpha=torch.full((out_channel,), 1000, dtype=image.dtype).to(image.device), channel_merge_mode=channel_merge_mode)
         return F.smorph(x=image, w=structuring_element, alpha=torch.full((out_channel, in_channel), 1000, dtype=image.dtype).to(image.device), channel_merge_mode=channel_merge_mode)
     elif operation == 'Serosion':
+        if channel_merge_mode == 'identity':
+            return F.smorph(x=image, w=structuring_element, alpha=torch.full((out_channel,), -1000, dtype=image.dtype).to(image.device), channel_merge_mode=channel_merge_mode)
         return F.smorph(x=image, w=structuring_element, alpha=torch.full((out_channel, in_channel), -1000, dtype=image.dtype).to(image.device), channel_merge_mode=channel_merge_mode)
     else:
         raise ValueError(f"Unknown operation: {operation}")

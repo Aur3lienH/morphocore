@@ -20,5 +20,7 @@ def str_to_merge(mode: str) -> MorphoMerge:
         return MorphoMerge.ADD
     elif mode == "mean":
         return MorphoMerge.AVERAGE
+    elif mode == "identity":
+        return MorphoMerge.IDENTITY
     else:
         raise ValueError(f"Unknown merge mode: {mode}")

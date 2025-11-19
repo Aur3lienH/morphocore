@@ -39,6 +39,13 @@ torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, 
 template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index>
 auto morpho_operation_forward_cpu_dispatcher(torch::Tensor input, torch::Tensor weight);
 
+template <MORPHO_OPERATION op, typename T, bool save_index>
+auto morpho_operation_forward_identity_cpu(torch::Tensor input, torch::Tensor weight);
+
+template <MORPHO_OPERATION op, typename T, bool save_index>
+torch::autograd::tensor_list morpho_operation_backward_identity_cpu(torch::Tensor input, torch::Tensor weight, torch::Tensor grad_output,
+                                                                    torch::Tensor max_indices);
+
 #include "morpho_op_cpu_forward.hxx"
 #include "morpho_op_cpu_backward.hxx"
 #include "morpho_op_specialized.hxx"

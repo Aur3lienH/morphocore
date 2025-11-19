@@ -21,5 +21,6 @@ enum class MORPHO_MERGE
     MIN,
     ADD,
     AVERAGE,
-    SMOOTH
+    SMOOTH,
+    IDENTITY
 };

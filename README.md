@@ -45,7 +45,7 @@ Performs morphological dilation on the input tensor.
 **Parameters:**
 - `input` (Tensor): Input tensor of shape (B, C, H, W)
 - `weight` (Tensor): Structuring element of shape (out_channels, in_channels, kH, kW)
-- `channel_merge_mode` (str): Channel combination method - "max", "min", "sum", or "mean"
+- `channel_merge_mode` (str): Channel combination method - "max", "min", "sum", "mean", or "identity"
 
 **Returns:**
 - `output` (Tensor): Dilated tensor of shape (B, out_channels, H, W)
@@ -60,6 +60,7 @@ result = dilation(image, structuring_element, "sum")
 max_result = dilation(image, kernel, "max")    # Maximum across channels
 sum_result = dilation(image, kernel, "sum")    # Sum across channels
 mean_result = dilation(image, kernel, "mean")  # Average across channels
+identity_result = dilation(image, kernel, "identity")  # No channel merging, keeping all channels linear in_channels = out_channels
 ```
 
 #### `erosion(input, weight, channel_merge_mode="max")`
@@ -128,11 +129,11 @@ erosion_layer = Mnn.Erosion(
 output = erosion_layer(input_tensor)
 ```
 
-#### `Mnn.Smorph(in_channels, out_channels, kernel_size, channel_merge_mode="max", alpha=1.0)`
+#### `Mnn.SMorph(in_channels, out_channels, kernel_size, channel_merge_mode="max", alpha=1.0)`
 Smooth morphological layer using softmax approximation.
 
 ```python
-smorph_layer = Mnn.Smorph(
+smorph_layer = Mnn.SMorph(
     in_channels=3, 
     out_channels=8, 
     kernel_size=(3, 3), 
