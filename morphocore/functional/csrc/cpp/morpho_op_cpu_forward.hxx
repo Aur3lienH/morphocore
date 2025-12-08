@@ -13,45 +13,6 @@
 #include "morpho_op_policy.hpp"
 #include "morpho_op_cpu_forward_linear.hxx"
 
-// TODO: Dispatch for the kernel sizes 3x3, 5x5, 7x7 for better performance
-/// @brief Dispatches to the most optimized forward morphological operation implementation based on kernel size.
-///        Uses specialized templates for common kernel sizes (3x3, 5x5, 7x7) for better performance; falls back to generic implementation
-///        otherwise.
-/// @tparam op Morphological operation type (e.g., dilation, erosion).
-/// @tparam merge Merge policy for combining results across channels.
-/// @tparam T Data type of tensor elements.
-/// @tparam save_index If true, saves the index of the maximal/minimal kernel position for each output element.
-/// @param input Input tensor of shape [batch, channels, height, width].
-/// @param weight Morphological kernel tensor of shape [out_channels, in_channels, kernel_height, kernel_width].
-/// @return Output tensor, or tuple (output, indices) if save_index is true.cc
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index>
-auto morpho_operation_forward_cpu_dispatcher(torch::Tensor input, torch::Tensor weight)
-{
-    const auto weight_shape = weight.sizes();
-    const int64_t kernel_height = weight_shape[2];
-    const int64_t kernel_width = weight_shape[3];
-
-    // if (kernel_height == 3 && kernel_width == 3)
-    // {
-    //     return morpho_operation_forward_cpu_template<op, merge, T, save_index, 3>(input, weight);
-    // }
-    // if (kernel_height == 5 && kernel_width == 5)
-    // {
-    //     return morpho_operation_forward_cpu_template<op, merge, T, save_index, 5>(input, weight);
-    // }
-    // if (kernel_height == 7 && kernel_width == 7)
-    // {
-    //     return morpho_operation_forward_cpu_template<op, merge, T, save_index, 7>(input, weight);
-    // }
-
-    if (merge == MORPHO_MERGE::IDENTITY)
-    {
-        return morpho_operation_forward_identity_cpu<op, T, save_index>(input, weight);
-    }
-
-    return morpho_operation_forward_cpu<op, merge, T, save_index>(input, weight);
-}
-
 // TODO: Handle the save_index case in backward pass and with multiple channels.
 /// @brief Perform the forward standard morphological operation on CPU.
 /// @tparam T Data type of tensor elements.
@@ -61,7 +22,7 @@ auto morpho_operation_forward_cpu_dispatcher(torch::Tensor input, torch::Tensor 
 /// @param input Input tensor of shape [batch, channels, height, width].
 /// @param weight Morphological kernel tensor of shape [out_channels, in_channels, kernel_height, kernel_width].
 /// @return Output tensor, or tuple (output, indices) if save_index is true.
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index>
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index>
 auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight)
 {
     // Policy for choosing between erosion and dilation.
@@ -163,8 +124,21 @@ auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight)
                                         {
                                             const int64_t pw = w + kernel_width_half - kw;
                                             const bool w_valid = (pw >= 0 && pw < width);
-
-                                            const T input_val = (h_valid && w_valid) ? input_channel[ph * width + pw] : PADDING_VAL;
+                                            T input_val;
+                                            if constexpr (padding == MORPHO_PADDING::GEODESIC)
+                                            {
+                                                input_val = (h_valid && w_valid) ? input_channel[ph * width + pw] : PADDING_VAL;
+                                            }
+                                            else if constexpr (padding == MORPHO_PADDING::REPLICATE)
+                                            {
+                                                const int64_t ph_rep = std::min(std::max(ph, int64_t(0)), height - 1);
+                                                const int64_t pw_rep = std::min(std::max(pw, int64_t(0)), width - 1);
+                                                input_val = input_channel[ph_rep * width + pw_rep];
+                                            }
+                                            else
+                                            {
+                                                throw std::runtime_error("morpho_op_cpu_forward: Unsupported padding mode.");
+                                            }
 
                                             const T val = Policy::combine(input_val, weight_in[k]);
 
@@ -204,4 +178,43 @@ auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight)
     {
         return output;
     }
+}
+
+// TODO: Dispatch for the kernel sizes 3x3, 5x5, 7x7 for better performance
+/// @brief Dispatches to the most optimized forward morphological operation implementation based on kernel size.
+///        Uses specialized templates for common kernel sizes (3x3, 5x5, 7x7) for better performance; falls back to generic implementation
+///        otherwise.
+/// @tparam op Morphological operation type (e.g., dilation, erosion).
+/// @tparam merge Merge policy for combining results across channels.
+/// @tparam T Data type of tensor elements.
+/// @tparam save_index If true, saves the index of the maximal/minimal kernel position for each output element.
+/// @param input Input tensor of shape [batch, channels, height, width].
+/// @param weight Morphological kernel tensor of shape [out_channels, in_channels, kernel_height, kernel_width].
+/// @return Output tensor, or tuple (output, indices) if save_index is true.
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index>
+auto morpho_operation_forward_cpu_dispatcher(torch::Tensor input, torch::Tensor weight)
+{
+    const auto weight_shape = weight.sizes();
+    const int64_t kernel_height = weight_shape[2];
+    const int64_t kernel_width = weight_shape[3];
+
+    // if (kernel_height == 3 && kernel_width == 3)
+    // {
+    //     return morpho_operation_forward_cpu_template<op, merge, T, save_index, 3>(input, weight);
+    // }
+    // if (kernel_height == 5 && kernel_width == 5)
+    // {
+    //     return morpho_operation_forward_cpu_template<op, merge, T, save_index, 5>(input, weight);
+    // }
+    // if (kernel_height == 7 && kernel_width == 7)
+    // {
+    //     return morpho_operation_forward_cpu_template<op, merge, T, save_index, 7>(input, weight);
+    // }
+
+    if constexpr (merge == MORPHO_MERGE::IDENTITY)
+    {
+        return morpho_operation_forward_identity_cpu<op, padding, T, save_index>(input, weight);
+    }
+
+    return morpho_operation_forward_cpu<op, merge, padding, T, save_index>(input, weight);
 }

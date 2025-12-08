@@ -23,7 +23,16 @@ def smorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, beta: torch.Te
     """
 
     
-    tanh_alpha = torch.tanh(alpha).unsqueeze(-1).unsqueeze(-1) 
+    if channel_merge_mode == 'identity':
+        if alpha.dim() == 1:
+            tanh_alpha = torch.tanh(alpha).view(-1, 1, 1, 1)
+        else:
+            tanh_alpha = torch.tanh(alpha).view(-1, 1, 1, 1)
+    else:
+        if alpha.dim() == 1:
+            tanh_alpha = torch.tanh(alpha).view(-1, 1, 1, 1)
+        else:
+            tanh_alpha = torch.tanh(alpha).unsqueeze(-1).unsqueeze(-1)
     
     term1 = (1 + tanh_alpha) / 2
     term2 = (1 - tanh_alpha) / 2

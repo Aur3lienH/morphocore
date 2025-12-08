@@ -15,11 +15,11 @@ class Dilation(MorphoModule):
     Returns:
         Output tensor, shape : (batch, out_channels, height, width)
     """
-    def __init__(self, in_channels : int, out_channels : int, kernel_size : tuple, channel_merge_mode: str = "sum", dtype: torch.dtype = torch.float32, save_indices: bool = True):
+    def __init__(self, in_channels : int, out_channels : int, kernel_size : tuple, channel_merge_mode: str = "sum", padding_mode: str = "replicate", dtype: torch.dtype = torch.float32, save_indices: bool = True):
         if type(kernel_size) is int:
             kernel_size = (kernel_size, kernel_size)
         self.save_indices = save_indices
-        super().__init__(in_channels, out_channels, kernel_size, channel_merge_mode, dtype=dtype)
+        super().__init__(in_channels, out_channels, kernel_size, channel_merge_mode, padding_mode, dtype=dtype)
 
     def forward(self, x):
-        return dilation(x, self.weight, self.channel_merge_mode, self.save_indices)
+        return dilation(x, self.weight, self.channel_merge_mode, self.padding_mode, self.save_indices)

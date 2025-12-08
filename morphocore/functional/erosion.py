@@ -1,8 +1,8 @@
 from cpp_operation import morpho_erosion
-from morphocore.functional.merge_enum import str_to_merge
+from morphocore.functional.merge_enum import str_to_merge, str_to_padding
 import torch
 
-def erosion(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum', save_indices: bool = True) -> torch.Tensor:
+def erosion(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'replicate', save_indices: bool = True) -> torch.Tensor:
 
     """
     Make an erosion by calling C++ or CUDA.
@@ -12,4 +12,4 @@ def erosion(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum', s
         w (torch.Tensor): weight
         channel_merge_mode (str): channel merge mode
     """
-    return morpho_erosion(x, w.flip((-2, -1)), str_to_merge(channel_merge_mode), save_indices)
+    return morpho_erosion(x, w.flip((-2, -1)), str_to_merge(channel_merge_mode), str_to_padding(padding_mode), save_indices)

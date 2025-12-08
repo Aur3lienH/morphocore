@@ -1,4 +1,4 @@
-from cpp_operation import MorphoMerge
+from cpp_operation import MorphoMerge, MorphoPadding
 
 
 def str_to_merge(mode: str) -> MorphoMerge:
@@ -24,3 +24,21 @@ def str_to_merge(mode: str) -> MorphoMerge:
         return MorphoMerge.IDENTITY
     else:
         raise ValueError(f"Unknown merge mode: {mode}")
+    
+def str_to_padding(mode: str) -> MorphoPadding:
+    """
+    Convert a string to a MorphoPadding enum.
+    
+    Args:
+        mode (str): "geodesic", "replicate"
+    
+    Returns:
+        MorphoPadding: Corresponding enum value.
+    """
+
+    if mode == "geodesic":
+        return MorphoPadding.GEODESIC
+    elif mode == "replicate":
+        return MorphoPadding.REPLICATE
+    else:
+        raise ValueError(f"Unknown padding mode: {mode}")

@@ -29,7 +29,8 @@ class SMorph(AlphaModule):
             out_channel (int): Number of output channels
             kernel_shape (tuple): Shape of the morphological kernel
         """
-
+        if type(kernel_size) is int:
+            kernel_size = (kernel_size, kernel_size)
         super(SMorph, self).__init__(in_channels, out_channels, kernel_size, channel_merge_mode, init_alpha, dtype)
         if init_beta is not None:
             self.beta = nn.Parameter(torch.full((out_channels, in_channels), init_beta, dtype=dtype))

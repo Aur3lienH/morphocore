@@ -24,3 +24,10 @@ enum class MORPHO_MERGE
     SMOOTH,
     IDENTITY
 };
+
+// Padding policy.
+enum class MORPHO_PADDING
+{
+    REPLICATE,
+    GEODESIC
+};

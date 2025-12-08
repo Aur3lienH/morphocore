@@ -51,8 +51,9 @@ torch::Scalar get_padding_value(torch::ScalarType dtype)
 /// @param input Input tensor of shape [batch, in_channels, height, width].
 /// @param weight Weight tensor of shape [out_channels, in_channels, kernel_height, kernel_width].
 /// @return Output tensor of shape [batch, out_channels, height, width].
-template <MORPHO_OPERATION Op, MORPHO_MERGE merge>
-torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight, bool save_indices)
+template <MORPHO_OPERATION Op, MORPHO_MERGE merge, MORPHO_PADDING padding>
+torch::Tensor MorphoOperation<Op, merge, padding>::forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight,
+                                                           bool save_indices)
 {
     TensorInputDim input_dim_manager(input);
     TensorWeightDim weight_dim_manager(weight);
@@ -163,13 +164,13 @@ torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradConte
         AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), cpu_operation_name, [&] {
             if (should_save_indices)
             {
-                auto result = morpho_operation_forward_cpu_dispatcher<Op, merge, scalar_t, true>(input_correct_dims, weight_correct_dims);
+                auto result = morpho_operation_forward_cpu_dispatcher<Op, merge, padding, scalar_t, true>(input_correct_dims, weight_correct_dims);
                 output = std::get<0>(result);
                 max_indices = std::get<1>(result);
             }
             else
             {
-                output = morpho_operation_forward_cpu_dispatcher<Op, merge, scalar_t, false>(input_correct_dims, weight_correct_dims);
+                output = morpho_operation_forward_cpu_dispatcher<Op, merge, padding, scalar_t, false>(input_correct_dims, weight_correct_dims);
                 max_indices = torch::empty({0}, torch::kLong);
             }
         });
@@ -186,8 +187,9 @@ torch::Tensor MorphoOperation<Op, merge>::forward(torch::autograd::AutogradConte
 /// @param ctx context to retrieve saved tensors from forward pass.
 /// @param grad_outputs Gradient tensors from the next layer.
 /// @return Gradient tensors for the input and weight.
-template <MORPHO_OPERATION Op, MORPHO_MERGE merge>
-torch::autograd::tensor_list MorphoOperation<Op, merge>::backward(torch::autograd::AutogradContext* ctx, torch::autograd::tensor_list grad_outputs)
+template <MORPHO_OPERATION Op, MORPHO_MERGE merge, MORPHO_PADDING padding>
+torch::autograd::tensor_list MorphoOperation<Op, merge, padding>::backward(torch::autograd::AutogradContext* ctx,
+                                                                           torch::autograd::tensor_list grad_outputs)
 {
     auto saved = ctx->get_saved_variables();
     auto input = saved[0];
@@ -301,11 +303,11 @@ torch::autograd::tensor_list MorphoOperation<Op, merge>::backward(torch::autogra
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), cpu_operation_name, [&] {
             if (indices_were_saved)
             {
-                result = morpho_operation_backward_cpu_dispatch<Op, merge, scalar_t, true>(input, weight, grad_output, max_indices);
+                result = morpho_operation_backward_cpu_dispatch<Op, merge, padding, scalar_t, true>(input, weight, grad_output, max_indices);
             }
             else
             {
-                result = morpho_operation_backward_cpu_dispatch<Op, merge, scalar_t, false>(input, weight, grad_output, max_indices);
+                result = morpho_operation_backward_cpu_dispatch<Op, merge, padding, scalar_t, false>(input, weight, grad_output, max_indices);
             }
         });
 

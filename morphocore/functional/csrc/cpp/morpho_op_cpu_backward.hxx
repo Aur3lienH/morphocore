@@ -36,7 +36,7 @@
 /// @param weight_in_stride The stride of the weight tensor in the input channel dimension.
 /// @param grad_output_batch_stride The stride of the gradient output tensor in the batch dimension.
 /// @param grad_output_channel_stride The stride of the gradient output tensor in the channel dimension.
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index, bool outside_in_channels>
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index, bool outside_in_channels>
 void morpho_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t height, int64_t width, int64_t kernel_height, int64_t kernel_width,
                              int64_t kernel_height_half, int64_t kernel_width_half, const T* __restrict__ input_ptr, const T* __restrict__ weight_ptr,
                              const T* __restrict__ grad_output_ptr, T* __restrict__ grad_input_ptr, T* __restrict__ local_grad_weight_ptr,
@@ -75,7 +75,21 @@ void morpho_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
                         const bool h_valid = (ph >= 0 && ph < height);
                         const bool w_valid = (pw >= 0 && pw < width);
 
-                        const T input_val = (h_valid && w_valid) ? input_channel[ph * width + pw] : Policy::padding_value();
+                        T input_val;
+                        if constexpr (padding == MORPHO_PADDING::GEODESIC)
+                        {
+                            input_val = (h_valid && w_valid) ? input_channel[ph * width + pw] : Policy::padding_value();
+                        }
+                        else if constexpr (padding == MORPHO_PADDING::REPLICATE)
+                        {
+                            const int64_t ph_rep = std::min(std::max(ph, int64_t(0)), height - 1);
+                            const int64_t pw_rep = std::min(std::max(pw, int64_t(0)), width - 1);
+                            input_val = input_channel[ph_rep * width + pw_rep];
+                        }
+                        else
+                        {
+                            throw std::runtime_error("morpho_op_cpu_backward: Unsupported padding mode.");
+                        }
 
                         const T val = Policy::combine(input_val, weight_base[kh * kernel_width + kw]);
 
@@ -138,7 +152,7 @@ void morpho_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
 /// @param weight_in_stride The stride of the weight tensor in the input channel dimension.
 /// @param grad_output_batch_stride The stride of the gradient output tensor in the batch dimension.
 /// @param grad_output_channel_stride The stride of the gradient output tensor in the channel dimension.
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index, bool outside_in_channels>
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index, bool outside_in_channels>
 void morpho_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t height, int64_t width, int64_t kernel_height, int64_t kernel_width,
                              int64_t kernel_height_half, int64_t kernel_width_half, const T* __restrict__ input_ptr, const T* __restrict__ weight_ptr,
                              const T* __restrict__ grad_output_ptr, T* __restrict__ grad_input_ptr, T* __restrict__ local_grad_weight_ptr,
@@ -183,7 +197,21 @@ void morpho_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
                         const bool h_valid = (ph >= 0 && ph < height);
                         const bool w_valid = (pw >= 0 && pw < width);
 
-                        const T input_val = (h_valid && w_valid) ? input_channel[ph * width + pw] : Policy::padding_value();
+                        T input_val;
+                        if constexpr (padding == MORPHO_PADDING::GEODESIC)
+                        {
+                            input_val = (h_valid && w_valid) ? input_channel[ph * width + pw] : Policy::padding_value();
+                        }
+                        else if constexpr (padding == MORPHO_PADDING::REPLICATE)
+                        {
+                            const int64_t ph_rep = std::min(std::max(ph, int64_t(0)), height - 1);
+                            const int64_t pw_rep = std::min(std::max(pw, int64_t(0)), width - 1);
+                            input_val = input_channel[ph_rep * width + pw_rep];
+                        }
+                        else
+                        {
+                            throw std::runtime_error("morpho_op_cpu_backward: Unsupported padding mode.");
+                        }
 
                         const T val = Policy::combine(input_val, weight_base[kh * kernel_width + kw]);
 
@@ -238,7 +266,7 @@ void morpho_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
 /// @param grad_output The gradient output tensor.
 /// @param max_indices The indices of the max values.
 /// @return The gradient tensors for the input and weight.
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index>
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index>
 torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, torch::Tensor weight, torch::Tensor grad_output,
                                                            torch::Tensor max_indices)
 {
@@ -314,14 +342,14 @@ torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, 
             {
                 if constexpr (merge == MORPHO_MERGE::ADD || merge == MORPHO_MERGE::AVERAGE)
                 {
-                    morpho_backward_sum_avg<op, merge, T, save_index, false>(
+                    morpho_backward_sum_avg<op, merge, padding, T, save_index, false>(
                         b, o, in_channels, height, width, kernel_height, kernel_width, kernel_height_half, kernel_width_half, input_ptr, weight_ptr,
                         grad_output_ptr, local_grad_input_ptr, local_grad_weight_ptr, input_batch_stride, input_channel_stride, weight_out_stride,
                         weight_in_stride, grad_output_batch_stride, grad_output_channel_stride);
                 }
                 else
                 {
-                    morpho_backward_min_max<op, merge, T, save_index, false>(
+                    morpho_backward_min_max<op, merge, padding, T, save_index, false>(
                         b, o, in_channels, height, width, kernel_height, kernel_width, kernel_height_half, kernel_width_half, input_ptr, weight_ptr,
                         grad_output_ptr, local_grad_input_ptr, local_grad_weight_ptr, input_batch_stride, input_channel_stride, weight_out_stride,
                         weight_in_stride, grad_output_batch_stride, grad_output_channel_stride);
@@ -368,16 +396,16 @@ torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, 
 /// @param grad_output The gradient output tensor.
 /// @param max_indices The indices of the max values.
 /// @return The gradient tensors for the input and weight.
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index>
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index>
 torch::autograd::tensor_list morpho_operation_backward_cpu_dispatch(torch::Tensor input, torch::Tensor weight, torch::Tensor grad_output,
                                                                     torch::Tensor max_indices)
 {
     if constexpr (merge == MORPHO_MERGE::IDENTITY)
     {
-        return morpho_operation_backward_identity_cpu<op, T, save_index>(input, weight, grad_output, max_indices);
+        return morpho_operation_backward_identity_cpu<op, padding, T, save_index>(input, weight, grad_output, max_indices);
     }
     else
     {
-        return morpho_operation_backward_cpu<op, merge, T, save_index>(input, weight, grad_output, max_indices);
+        return morpho_operation_backward_cpu<op, merge, padding, T, save_index>(input, weight, grad_output, max_indices);
     }
 }

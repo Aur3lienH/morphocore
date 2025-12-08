@@ -17,7 +17,7 @@
 /// @param input Input tensor of shape [batch, channels, height, width].
 /// @param weight Morphological kernel tensor of shape [channels, 1, kernel_height, kernel_width].
 /// @return Output tensor, or tuple (output, indices) if save_index is true.
-template <MORPHO_OPERATION op, typename T, bool save_index>
+template <MORPHO_OPERATION op, MORPHO_PADDING padding, typename T, bool save_index>
 auto morpho_operation_forward_identity_cpu(torch::Tensor input, torch::Tensor weight)
 {
     using Policy = MorphoPolicyCPU<T, op>;
@@ -111,7 +111,21 @@ auto morpho_operation_forward_identity_cpu(torch::Tensor input, torch::Tensor we
                                     const int64_t pw = w + kernel_width_half - kw;
                                     const bool w_valid = (pw >= 0 && pw < width);
 
-                                    const T input_val = (h_valid && w_valid) ? input_channel[ph * width + pw] : PADDING_VAL;
+                                    T input_val;
+                                    if constexpr (padding == MORPHO_PADDING::GEODESIC)
+                                    {
+                                        input_val = (h_valid && w_valid) ? input_channel[ph * width + pw] : PADDING_VAL;
+                                    }
+                                    else if constexpr (padding == MORPHO_PADDING::REPLICATE)
+                                    {
+                                        const int64_t ph_rep = std::min(std::max(ph, int64_t(0)), height - 1);
+                                        const int64_t pw_rep = std::min(std::max(pw, int64_t(0)), width - 1);
+                                        input_val = input_channel[ph_rep * width + pw_rep];
+                                    }
+                                    else
+                                    {
+                                        throw std::runtime_error("morpho_op_cpu_forward: Unsupported padding mode.");
+                                    }
                                     const T val = Policy::combine(input_val, weight_channel[k]);
 
                                     if (Policy::is_better(val, best_value))

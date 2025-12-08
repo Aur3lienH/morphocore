@@ -14,7 +14,7 @@
 /// @param grad_output Gradient of output tensor.
 /// @param max_indices Precomputed indices (if save_index is true).
 /// @return Gradients for input and weight.
-template <MORPHO_OPERATION op, typename T, bool save_index>
+template <MORPHO_OPERATION op, MORPHO_PADDING padding, typename T, bool save_index>
 torch::autograd::tensor_list morpho_operation_backward_identity_cpu(torch::Tensor input, torch::Tensor weight, torch::Tensor grad_output,
                                                                     torch::Tensor max_indices)
 {
@@ -97,7 +97,22 @@ torch::autograd::tensor_list morpho_operation_backward_identity_cpu(torch::Tenso
                                 const int64_t pw = w + kernel_width_half - kw;
                                 const bool w_valid = (pw >= 0 && pw < width);
 
-                                const T input_val = (h_valid && w_valid) ? input_channel[ph * width + pw] : Policy::padding_value();
+                                T input_val;
+                                if constexpr (padding == MORPHO_PADDING::GEODESIC)
+                                {
+                                    input_val = (h_valid && w_valid) ? input_channel[ph * width + pw] : Policy::padding_value();
+                                }
+                                else if constexpr (padding == MORPHO_PADDING::REPLICATE)
+                                {
+                                    const int64_t ph_rep = std::min(std::max(ph, int64_t(0)), height - 1);
+                                    const int64_t pw_rep = std::min(std::max(pw, int64_t(0)), width - 1);
+                                    input_val = input_channel[ph_rep * width + pw_rep];
+                                }
+                                else
+                                {
+                                    throw std::runtime_error("morpho_op_cpu_backward_linear: Unsupported padding mode.");
+                                }
+
                                 const T val = Policy::combine(input_val, weight_channel[kh * kernel_width + kw]);
 
                                 if (Policy::is_better(val, best_value))

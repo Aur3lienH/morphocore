@@ -6,33 +6,56 @@
 #include "smorph.hpp"
 #include "smorph_scm.hpp"
 
-using MorphoDilationSum = MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::ADD>;
-using MorphoDilationMax = MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::MAX>;
-using MorphoDilationMin = MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::MIN>;
-using MorphoDilationAverage = MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::AVERAGE>;
-using MorphoDilationIdentity = MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::IDENTITY>;
-
-using MorphoErosionSum = MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::ADD>;
-using MorphoErosionMax = MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::MAX>;
-using MorphoErosionMin = MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::MIN>;
-using MorphoErosionAverage = MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::AVERAGE>;
-using MorphoErosionIdentity = MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::IDENTITY>;
-
 /// @brief Morphological dilation operation
 /// @param input Input tensor
 /// @param weight Structuring element
 /// @param merge Merge channel mode
 /// @return Output tensor
-torch::Tensor morpho_dilation(torch::Tensor input, torch::Tensor weight, MORPHO_MERGE merge, bool save_indices)
+torch::Tensor morpho_dilation(torch::Tensor input, torch::Tensor weight, MORPHO_MERGE merge, MORPHO_PADDING padding, bool save_indices)
 {
-    switch (merge)
+    switch (padding)
     {
-        case MORPHO_MERGE::ADD: return MorphoDilationSum::apply(input, weight, save_indices);
-        case MORPHO_MERGE::MAX: return MorphoDilationMax::apply(input, weight, save_indices);
-        case MORPHO_MERGE::MIN: return MorphoDilationMin::apply(input, weight, save_indices);
-        case MORPHO_MERGE::AVERAGE: return MorphoDilationAverage::apply(input, weight, save_indices);
-        case MORPHO_MERGE::IDENTITY: return MorphoDilationIdentity::apply(input, weight, save_indices);
-        default: TORCH_CHECK(false, "Unsupported merge operation for dilation"); return torch::Tensor();
+        case MORPHO_PADDING::REPLICATE:
+            switch (merge)
+            {
+                case MORPHO_MERGE::ADD:
+                    return MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::ADD, MORPHO_PADDING::REPLICATE>::apply(input, weight,
+                                                                                                                            save_indices);
+                case MORPHO_MERGE::MAX:
+                    return MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::MAX, MORPHO_PADDING::REPLICATE>::apply(input, weight,
+                                                                                                                            save_indices);
+                case MORPHO_MERGE::MIN:
+                    return MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::MIN, MORPHO_PADDING::REPLICATE>::apply(input, weight,
+                                                                                                                            save_indices);
+                case MORPHO_MERGE::AVERAGE:
+                    return MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::AVERAGE, MORPHO_PADDING::REPLICATE>::apply(input, weight,
+                                                                                                                                save_indices);
+                case MORPHO_MERGE::IDENTITY:
+                    return MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::IDENTITY, MORPHO_PADDING::REPLICATE>::apply(input, weight,
+                                                                                                                                 save_indices);
+                default: TORCH_CHECK(false, "Unsupported merge operation for dilation"); return torch::Tensor();
+            }
+        case MORPHO_PADDING::GEODESIC:
+            switch (merge)
+            {
+                case MORPHO_MERGE::ADD:
+                    return MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::ADD, MORPHO_PADDING::GEODESIC>::apply(input, weight,
+                                                                                                                           save_indices);
+                case MORPHO_MERGE::MAX:
+                    return MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::MAX, MORPHO_PADDING::GEODESIC>::apply(input, weight,
+                                                                                                                           save_indices);
+                case MORPHO_MERGE::MIN:
+                    return MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::MIN, MORPHO_PADDING::GEODESIC>::apply(input, weight,
+                                                                                                                           save_indices);
+                case MORPHO_MERGE::AVERAGE:
+                    return MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::AVERAGE, MORPHO_PADDING::GEODESIC>::apply(input, weight,
+                                                                                                                               save_indices);
+                case MORPHO_MERGE::IDENTITY:
+                    return MorphoOperation<MORPHO_OPERATION::DILATION, MORPHO_MERGE::IDENTITY, MORPHO_PADDING::GEODESIC>::apply(input, weight,
+                                                                                                                                save_indices);
+                default: TORCH_CHECK(false, "Unsupported merge operation for dilation"); return torch::Tensor();
+            }
+        default: TORCH_CHECK(false, "Unsupported padding mode for dilation"); return torch::Tensor();
     }
 }
 
@@ -41,16 +64,51 @@ torch::Tensor morpho_dilation(torch::Tensor input, torch::Tensor weight, MORPHO_
 /// @param weight Structuring element
 /// @param merge Merge channel mode
 /// @return Output tensor
-torch::Tensor morpho_erosion(torch::Tensor input, torch::Tensor weight, MORPHO_MERGE merge, bool save_indices)
+torch::Tensor morpho_erosion(torch::Tensor input, torch::Tensor weight, MORPHO_MERGE merge, MORPHO_PADDING padding, bool save_indices)
 {
-    switch (merge)
+    switch (padding)
     {
-        case MORPHO_MERGE::ADD: return MorphoErosionSum::apply(input, weight, save_indices);
-        case MORPHO_MERGE::MAX: return MorphoErosionMax::apply(input, weight, save_indices);
-        case MORPHO_MERGE::MIN: return MorphoErosionMin::apply(input, weight, save_indices);
-        case MORPHO_MERGE::AVERAGE: return MorphoErosionAverage::apply(input, weight, save_indices);
-        case MORPHO_MERGE::IDENTITY: return MorphoErosionIdentity::apply(input, weight, save_indices);
-        default: TORCH_CHECK(false, "Unsupported merge operation for erosion"); return torch::Tensor();
+        case MORPHO_PADDING::REPLICATE:
+            switch (merge)
+            {
+                case MORPHO_MERGE::ADD:
+                    return MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::ADD, MORPHO_PADDING::REPLICATE>::apply(input, weight,
+                                                                                                                           save_indices);
+                case MORPHO_MERGE::MAX:
+                    return MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::MAX, MORPHO_PADDING::REPLICATE>::apply(input, weight,
+                                                                                                                           save_indices);
+                case MORPHO_MERGE::MIN:
+                    return MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::MIN, MORPHO_PADDING::REPLICATE>::apply(input, weight,
+                                                                                                                           save_indices);
+                case MORPHO_MERGE::AVERAGE:
+                    return MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::AVERAGE, MORPHO_PADDING::REPLICATE>::apply(input, weight,
+                                                                                                                               save_indices);
+                case MORPHO_MERGE::IDENTITY:
+                    return MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::IDENTITY, MORPHO_PADDING::REPLICATE>::apply(input, weight,
+                                                                                                                                save_indices);
+                default: TORCH_CHECK(false, "Unsupported merge operation for erosion"); return torch::Tensor();
+            }
+        case MORPHO_PADDING::GEODESIC:
+            switch (merge)
+            {
+                case MORPHO_MERGE::ADD:
+                    return MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::ADD, MORPHO_PADDING::GEODESIC>::apply(input, weight,
+                                                                                                                          save_indices);
+                case MORPHO_MERGE::MAX:
+                    return MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::MAX, MORPHO_PADDING::GEODESIC>::apply(input, weight,
+                                                                                                                          save_indices);
+                case MORPHO_MERGE::MIN:
+                    return MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::MIN, MORPHO_PADDING::GEODESIC>::apply(input, weight,
+                                                                                                                          save_indices);
+                case MORPHO_MERGE::AVERAGE:
+                    return MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::AVERAGE, MORPHO_PADDING::GEODESIC>::apply(input, weight,
+                                                                                                                              save_indices);
+                case MORPHO_MERGE::IDENTITY:
+                    return MorphoOperation<MORPHO_OPERATION::EROSION, MORPHO_MERGE::IDENTITY, MORPHO_PADDING::GEODESIC>::apply(input, weight,
+                                                                                                                               save_indices);
+                default: TORCH_CHECK(false, "Unsupported merge operation for erosion"); return torch::Tensor();
+            }
+        default: TORCH_CHECK(false, "Unsupported padding mode for erosion"); return torch::Tensor();
     }
 }
 
@@ -88,6 +146,11 @@ PYBIND11_MODULE(cpp_operation, m)
         .value("ADD", MORPHO_MERGE::ADD)
         .value("AVERAGE", MORPHO_MERGE::AVERAGE)
         .value("IDENTITY", MORPHO_MERGE::IDENTITY)
+        .export_values();
+
+    py::enum_<MORPHO_PADDING>(m, "MorphoPadding")
+        .value("GEODESIC", MORPHO_PADDING::GEODESIC)
+        .value("REPLICATE", MORPHO_PADDING::REPLICATE)
         .export_values();
 
     m.def("morpho_dilation", &morpho_dilation, "Morphological dilation operation (CUDA)");

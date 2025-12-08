@@ -9,8 +9,9 @@
 /// @brief Morphological operation class implementing forward and backward passes (dispatcher).
 /// @tparam op Morphological operation (dilation or erosion).
 /// @tparam merge Merge channel policy.
-template <MORPHO_OPERATION op, MORPHO_MERGE merge>
-class MorphoOperation : public torch::autograd::Function<MorphoOperation<op, merge>>
+/// @tparam padding Padding mode (replicate or geodesic).
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding>
+class MorphoOperation : public torch::autograd::Function<MorphoOperation<op, merge, padding>>
 {
 public:
     static torch::Tensor forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight, bool save_indices);
@@ -26,27 +27,29 @@ public:
     }
 };
 
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index>
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index>
 auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight);
 
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index, int KERNEL_SIZE>
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index, int KERNEL_SIZE>
 auto morpho_operation_forward_cpu_template(torch::Tensor input, torch::Tensor weight);
 
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index>
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index>
 torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, torch::Tensor weight, torch::Tensor grad_output,
                                                            torch::Tensor max_indices);
 
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index>
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index>
 auto morpho_operation_forward_cpu_dispatcher(torch::Tensor input, torch::Tensor weight);
 
-template <MORPHO_OPERATION op, typename T, bool save_index>
+template <MORPHO_OPERATION op, MORPHO_PADDING padding, typename T, bool save_index>
 auto morpho_operation_forward_identity_cpu(torch::Tensor input, torch::Tensor weight);
 
-template <MORPHO_OPERATION op, typename T, bool save_index>
+template <MORPHO_OPERATION op, MORPHO_PADDING padding, typename T, bool save_index>
 torch::autograd::tensor_list morpho_operation_backward_identity_cpu(torch::Tensor input, torch::Tensor weight, torch::Tensor grad_output,
                                                                     torch::Tensor max_indices);
 
 #include "morpho_op_cpu_forward.hxx"
 #include "morpho_op_cpu_backward.hxx"
+#include "morpho_op_cpu_forward_linear.hxx"
+#include "morpho_op_cpu_backward_linear.hxx"
 #include "morpho_op_specialized.hxx"
 #include "morpho_op_wrap.hxx"
