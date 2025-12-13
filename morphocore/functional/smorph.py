@@ -5,23 +5,54 @@ from morphocore.functional.merge_enum import str_to_merge
 
 
 def smorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, beta: torch.Tensor = None, channel_merge_mode: str = "sum") -> torch.Tensor:
-    """ 
-    Function that approximates a dilation or an erosion depending on an alpha control parameter.
-
-    Formula : (Needs reflection)
-
-    Behaviour of alpha : 
-        - When alpha -> ∞ then Smorph tends to be a dilation.
-        - When alpha -> -∞ then Smorph tends to be an erosion.
-        - When alpha is close to 0 -> then Smorph is something between an erosion and a dilation.
-    
-    Args:
-        x: Input tensor of shape [batch, in_channels, height, width]
-        w: Weight tensor of shape [out_channels, in_channels, kernel_height, kernel_width]
-        alpha: Control parameter tensor of shape [out_channels, in_channels]
-        channel_merge_mode: How to merge across input channels ("sum", "max", or "mean")
     """
+    Apply smooth morphological operation with learnable interpolation parameter.
+    
+    Approximates a morphological operation that smoothly transitions from erosion to dilation
+    based on the alpha parameter. When alpha → +∞, the operation becomes dilation; 
+    when alpha → -∞, it becomes erosion.
 
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input tensor of shape (N, C_in, H, W) where N is batch size, C_in is the number
+        of input channels, H is height, and W is width.
+    w : torch.Tensor
+        Structuring element (kernel) of shape (C_out, C_in, K_h, K_w) where C_out is the
+        number of output channels, K_h and K_w are the kernel height and width.
+    alpha : torch.Tensor
+        Control parameter of shape (C_out, C_in) or (C_out,) that interpolates between 
+        erosion and dilation. When alpha → +∞, output → dilation; when alpha → -∞, 
+        output → erosion.
+    beta : torch.Tensor, optional
+        Additional control parameter for selective channel merging. Default is None.
+    channel_merge_mode : str, optional
+        Strategy for merging multiple input channels. Options include:
+        'sum', 'max', 'min', 'average' or 'identity'. Default is 'sum'.
+
+    Returns
+    -------
+    torch.Tensor
+        Output tensor of shape (N, C_out, H, W).
+
+    Notes
+    -----
+    The operation uses a smooth approximation with tanh activation:
+    w̃(α) = tanh(α) × [(1-tanh(α))/2 × w_flipped + (1+tanh(α))/2 × w]
+    
+    Supports GPU acceleration via CUDA and backpropagation for trainable layers.
+
+    Examples
+    --------
+    >>> import torch
+    >>> from morphocore.functional import smorph
+    >>> x = torch.randn(1, 3, 32, 32)
+    >>> w = torch.ones(3, 3, 5, 5)
+    >>> alpha = torch.zeros(3, 3)  # Balanced between erosion and dilation
+    >>> output = smorph(x, w, alpha)
+    >>> output.shape
+    torch.Size([1, 3, 32, 32])
+    """
     
     if channel_merge_mode == 'identity':
         if alpha.dim() == 1:

@@ -47,7 +47,6 @@ build:
     DOCKER_TLS_CERTDIR: "/certs"
   parallel:
     matrix:
-    # Each version of torch to build against, add more if needed, removed older versions of pytorch because no widely used anymore
       - TORCH_VERSION: ["2.6", "2.7", "2.8", "2.9"]
   before_script:
     - apt-get update && apt-get install -y docker.io
@@ -73,3 +72,24 @@ deploy-pypi:
     - if: $CI_COMMIT_TAG
   dependencies:
     - build
+
+pages:
+  stage: deploy
+  image: python:3.11
+  before_script:
+    - pip install --upgrade pip
+    - pip install -r docs/requirements.txt
+  script:
+    - cd docs
+    - make html
+    - cd ..
+    - mv docs/build/html public
+    - echo "Documentation deployed to https://${CI_PROJECT_NAMESPACE}.gitlab.io/${CI_PROJECT_NAME}/"
+  artifacts:
+    paths:
+      - public
+    expire_in: 30 days
+  rules:
+    - if: $CI_COMMIT_TAG
+  only:
+    - tags

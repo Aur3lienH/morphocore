@@ -108,9 +108,9 @@ torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradCo
     auto alpha = saved[3];
     auto input = saved[4];
     auto weight = saved[5];
-    torch::Tensor grad_input = torch::zeros_like(input, grad_outputs[0].options());
-    torch::Tensor grad_weight = torch::zeros_like(weight, grad_outputs[0].options());
-    torch::Tensor grad_alpha = torch::zeros_like(alpha, grad_outputs[0].options());
+    torch::Tensor grad_input = torch::zeros_like(input, grad_outputs[0].options()).contiguous();
+    torch::Tensor grad_weight = torch::zeros_like(weight, grad_outputs[0].options()).contiguous();
+    torch::Tensor grad_alpha = torch::zeros_like(alpha, grad_outputs[0].options()).contiguous();
     if (grad_outputs[0].is_cuda())
     {
 #ifdef WITH_CUDA

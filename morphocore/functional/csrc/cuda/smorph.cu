@@ -18,12 +18,16 @@ void morpho_smorph_forward_kernel(const scalar_t* input, const scalar_t* weight,
     int64_t total_input_size = input_channel * PADDED_TILE_HEIGHT * PADDED_TILE_WIDTH;
     int64_t shared_memory_size = sizeof(scalar_t) * (total_weight_size + total_input_size);
 
-
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, 0);
     
+    
     if (shared_memory_size > prop.sharedMemPerBlock) {
-        printf("ERROR: Shared memory EXCEEDS device limit!\n");
+        cudaFuncSetAttribute(
+            smorph_forward_kernel<merge, scalar_t>,
+            cudaFuncAttributeMaxDynamicSharedMemorySize,
+            shared_memory_size
+        );
     }
     
     dim3 threads(TILE_WIDTH, TILE_HEIGHT);
@@ -32,6 +36,15 @@ void morpho_smorph_forward_kernel(const scalar_t* input, const scalar_t* weight,
     smorph_forward_kernel<merge, scalar_t>
         <<<blocks, threads, shared_memory_size>>>(input, weight, alpha, output, references_indexes, sum_values, batch_size, input_channel,
                                                   output_channel, height, width, kernel_height, kernel_width, kernel_height_half, kernel_width_half);
+    
+    cudaError_t err = cudaDeviceSynchronize();
+    if (err != cudaSuccess)
+    {
+        std::cerr << "CUDA Error in smorph_forward: " << cudaGetErrorString(err) << std::endl;
+        std::cerr << "Shared memory: " << shared_memory_size << " bytes" << std::endl;
+        std::cerr.flush();
+        throw std::runtime_error(std::string("CUDA Error in forward: ") + cudaGetErrorString(err));
+    }
 }
 
 template <MORPHO_MERGE merge, typename scalar_t>
@@ -49,15 +62,10 @@ void morpho_smorph_backward_kernel(
         batch_size
     );
 
-    const int kernel_size = kernel_height * kernel_width;
-    const int threads_per_block = TILE_WIDTH * TILE_HEIGHT;
-
+    
     if constexpr (merge == MORPHO_MERGE::MIN || merge == MORPHO_MERGE::MAX)
     {
-        const size_t shared_mem_size = threads_per_block * 
-            (2 * input_channels + 2 * input_channels * kernel_size) * sizeof(scalar_t);
-        
-        smorph_backward_minmax_kernel<merge, scalar_t><<<blocks, threads, shared_mem_size>>>(
+        smorph_backward_minmax_kernel<merge, scalar_t><<<blocks, threads>>>(
             grad_output, grad_input, grad_weight, grad_alpha, alpha, input,
             weights, batch_size, input_channels, output_channels, height, width,
             kernel_height, kernel_width, kernel_height_half, kernel_width_half
@@ -65,22 +73,31 @@ void morpho_smorph_backward_kernel(
     }
     else
     {
-        const size_t shared_mem_size = threads_per_block * 2 * kernel_size * sizeof(scalar_t);
-        
-        smorph_backward_kernel<merge, scalar_t><<<blocks, threads, shared_mem_size>>>(
+        smorph_backward_kernel<merge, scalar_t><<<blocks, threads>>>(
             grad_output, grad_input, grad_weight, grad_alpha, alpha, input,
             weights, batch_size, input_channels, output_channels, height, width,
             kernel_height, kernel_width, kernel_height_half, kernel_width_half
         );
     }
 
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess)
+    cudaError_t sync_err = cudaDeviceSynchronize();
+    if (sync_err != cudaSuccess)
     {
-        printf("CUDA Error in smorph_backward: %s\n", cudaGetErrorString(err));
+        throw std::runtime_error(
+            "CUDA Error in smorph_backward: " + std::string(cudaGetErrorString(sync_err)) +
+            "\nInput channels: " + std::to_string(input_channels) +
+            "\nKernel size: " + std::to_string(kernel_height * kernel_width)
+        );
+    }
+    
+    cudaError_t launch_err = cudaGetLastError();
+    if (launch_err != cudaSuccess)
+    {
+        throw std::runtime_error(
+            "CUDA Launch Error in smorph_backward: " + std::string(cudaGetErrorString(launch_err))
+        );
     }
 }
-
 
 #define INSTANTIATE_SMORPH_KERNELS(MERGE_TYPE, SCALAR_T)                                                                                             \
     template void morpho_smorph_forward_kernel<MERGE_TYPE, SCALAR_T>(                                                                                \

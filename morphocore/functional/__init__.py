@@ -1,12 +1,8 @@
 from .dilation import dilation
 from .erosion import erosion
-from .smorph import smorph
+from .opening import opening
+from .closing import closing
 from .emorph import emorph
+from .smorph import smorph
 
-"""
-Functional interface for morphological operations.
-"""
-
-__all__ = [
-    'dilation', 'erosion', 'smorph', 'emorph'
-]
+__all__ = ['dilation', 'erosion', 'opening', 'closing', 'emorph', 'smorph']

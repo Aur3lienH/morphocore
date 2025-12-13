@@ -1,0 +1,120 @@
+/* Morphocore Custom Color Scheme */
+:root {
+    --primary-navy: #1E3A8A;
+    --secondary-sky: #5DADE2;
+    --light-sky: #87CEEB;
+    --accent-coral: #FF6B6B;
+    --accent-lime: #84CC16;
+}
+
+/* Navigation bar - Dark Navy */
+.wy-nav-top {
+    background: var(--primary-navy) !important;
+}
+
+.wy-side-nav-search {
+    background: var(--primary-navy) !important;
+}
+
+.wy-side-nav-search input[type=text] {
+    border-color: var(--secondary-sky);
+}
+
+/* Sidebar active item - Sky Blue */
+.wy-menu-vertical li.current a {
+    border-right: 3px solid var(--secondary-sky);
+}
+
+.wy-menu-vertical a:hover {
+    background-color: rgba(93, 173, 226, 0.1);
+}
+
+/* Links - Sky Blue */
+a {
+    color: var(--secondary-sky);
+}
+
+a:hover {
+    color: var(--primary-navy);
+}
+
+a:visited {
+    color: #4A9BCF;
+}
+
+/* Headers */
+h1, h2, h3, h4, h5, h6 {
+    color: var(--primary-navy) !important;
+}
+
+/* Code blocks - Coral accent border */
+.highlight {
+    border-left: 3px solid var(--accent-coral);
+}
+
+/* Inline code */
+code.literal {
+    background-color: rgba(93, 173, 226, 0.1);
+    border: 1px solid var(--secondary-sky);
+    color: var(--primary-navy);
+}
+
+/* Admonitions */
+.admonition.note {
+    background-color: rgba(93, 173, 226, 0.1);
+    border-left: 3px solid var(--secondary-sky);
+}
+
+.admonition.warning {
+    border-left: 3px solid var(--accent-coral);
+}
+
+.admonition.tip {
+    border-left: 3px solid var(--accent-lime);
+}
+
+/* Buttons */
+.btn-neutral {
+    background-color: var(--secondary-sky) !important;
+    color: white !important;
+}
+
+.btn-neutral:hover {
+    background-color: var(--primary-navy) !important;
+}
+
+/* Tables */
+.wy-table-bordered-all th {
+    background-color: var(--primary-navy);
+    color: white;
+}
+
+.wy-table-odd td, .wy-table-striped tr:nth-child(2n-1) td {
+    background-color: rgba(93, 173, 226, 0.05);
+}
+
+/* Version selector */
+.rst-versions {
+    border-top: 3px solid var(--secondary-sky);
+}
+
+.rst-versions .rst-current-version {
+    background-color: var(--primary-navy);
+}
+
+
+.wy-nav-content {
+    max-width: none !important;
+}
+
+.content {
+    max-width: none !important;
+}
+
+.bd-main .bd-content {
+    max-width: none !important;
+}
+
+.document {
+    max-width: 100% !important;
+}

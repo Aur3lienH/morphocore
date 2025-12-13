@@ -1,6 +1,24 @@
 # Morphocore
 
-Morphocore is a Python library designed to integrate mathematical morphology into neural networks. It provides differentiable (float and double) and optimized morphological operations, enabling deep learning architectures to leverage powerful image processing tools from mathematical morphology.
+Morph### Installation from Source
+
+```bash
+git clone git@gitlab.lre.epita.fr:aurelien.hurand/morphocore.git
+cd morphocore
+pip install . --no-build-isolation
+```
+
+**CPU-Only Installation** (without CUDA):
+
+```bash
+MORPHO_WITH_CUDA=0 pip install . --no-build-isolation
+```
+
+This is useful when:
+- You don't have an NVIDIA GPU
+- CUDA Toolkit is not installed
+- You want faster compilation times
+- You're deploying on CPU-only serverss a Python library designed to integrate mathematical morphology into neural networks. It provides differentiable (float and double) and optimized morphological operations, enabling deep learning architectures to leverage powerful image processing tools from mathematical morphology.
 
 ## Main Features
 - Primary morphological operations (dilation, erosion)
