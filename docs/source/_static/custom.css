@@ -16,6 +16,17 @@
     background: var(--primary-navy) !important;
 }
 
+/* Project Title - Coral */
+.wy-side-nav-search > a,
+.wy-side-nav-search .wy-dropdown > a {
+    color: var(--accent-coral) !important;
+    font-weight: bold;
+}
+
+.wy-side-nav-search > a:hover {
+    color: var(--light-sky) !important;
+}
+
 .wy-side-nav-search input[type=text] {
     border-color: var(--secondary-sky);
 }
@@ -102,7 +113,7 @@ code.literal {
     background-color: var(--primary-navy);
 }
 
-
+/* Full width content */
 .wy-nav-content {
     max-width: none !important;
 }

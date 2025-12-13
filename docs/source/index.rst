@@ -65,6 +65,8 @@ Table of Contents
    installation
    quickstart
    api
+   nn_api
+   functional_api
 
 Indices and tables
 ==================

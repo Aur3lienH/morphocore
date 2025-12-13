@@ -79,6 +79,7 @@ pages:
   before_script:
     - pip install --upgrade pip
     - pip install -r docs/requirements.txt
+    - MORPHO_WITH_CUDA=0 pip install -e .
   script:
     - cd docs
     - make html
@@ -91,3 +92,20 @@ pages:
     expire_in: 30 days
   rules:
     - if: $CI_COMMIT_TAG
+
+notify-release:
+  stage: deploy
+  image: curlimages/curl:latest
+  script:
+    - |
+      # Escape quotes in commit message for JSON
+      TAG_MESSAGE=$(echo "${CI_COMMIT_MESSAGE}" | sed 's/"/\\"/g' | sed 's/$/\\n/g' | tr -d '\n')
+      
+      curl -H "Content-Type: application/json" -d "{
+        \"text\": \"🎉 **New Version of Morphocore Released!**\n\n📦 **Version:** \`${CI_COMMIT_TAG}\`\n\n✨ **What's New:**\n${TAG_MESSAGE}\n\n---\n\n🔗 **Quick Links:**\n• 📚 [Documentation](https://${CI_PROJECT_NAMESPACE}.gitlab.io/${CI_PROJECT_NAME}/)\n• 🐍 [PyPI Package](https://pypi.org/project/morphocore/${CI_COMMIT_TAG}/)\n• 🏷️ [Release Notes](${CI_PROJECT_URL}/-/tags/${CI_COMMIT_TAG})\n\n---\n\n⚡ **Update Now:**\n\\\`\\\`\\\`bash\npip install --upgrade morphocore\n\\\`\\\`\\\`\n\n💡 *Don't forget to update your environment!*\"
+      }" "${TEAMS_WEBHOOK_URL}"
+  rules:
+    - if: $CI_COMMIT_TAG
+  when: on_success
+  dependencies:
+    - deploy-pypi
