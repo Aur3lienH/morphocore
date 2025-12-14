@@ -85,7 +85,6 @@ pages:
     - make html
     - cd ..
     - mv docs/build/html public
-    - echo "Documentation deployed to https://${CI_PROJECT_NAMESPACE}.gitlab.io/${CI_PROJECT_NAME}/"
   artifacts:
     paths:
       - public
@@ -96,16 +95,87 @@ pages:
 notify-release:
   stage: deploy
   image: curlimages/curl:latest
+  needs:
+    - job: deploy-pypi
+      artifacts: false
   script:
     - |
-      # Escape quotes in commit message for JSON
-      TAG_MESSAGE=$(echo "${CI_COMMIT_MESSAGE}" | sed 's/"/\\"/g' | sed 's/$/\\n/g' | tr -d '\n')
-      
-      curl -H "Content-Type: application/json" -d "{
-        \"text\": \"🎉 **New Version of Morphocore Released!**\n\n📦 **Version:** \`${CI_COMMIT_TAG}\`\n\n✨ **What's New:**\n${TAG_MESSAGE}\n\n---\n\n🔗 **Quick Links:**\n• 📚 [Documentation](https://${CI_PROJECT_NAMESPACE}.gitlab.io/${CI_PROJECT_NAME}/)\n• 🐍 [PyPI Package](https://pypi.org/project/morphocore/${CI_COMMIT_TAG}/)\n• 🏷️ [Release Notes](${CI_PROJECT_URL}/-/tags/${CI_COMMIT_TAG})\n\n---\n\n⚡ **Update Now:**\n\\\`\\\`\\\`bash\npip install --upgrade morphocore\n\\\`\\\`\\\`\n\n💡 *Don't forget to update your environment!*\"
-      }" "${TEAMS_WEBHOOK_URL}"
+      curl -X POST \
+        -H "Content-Type: application/json" \
+        -w "\nHTTP Status: %{http_code}\n" \
+        -d "{
+          \"attachments\": [{
+            \"contentType\": \"application/vnd.microsoft.card.adaptive\",
+            \"content\": {
+              \"\$schema\": \"http://adaptivecards.io/schemas/adaptive-card.json\",
+              \"type\": \"AdaptiveCard\",
+              \"version\": \"1.4\",
+              \"body\": [
+                {
+                  \"type\": \"TextBlock\",
+                  \"text\": \"🎉 New Version of Morphocore Released!\",
+                  \"weight\": \"bolder\",
+                  \"size\": \"large\",
+                  \"color\": \"good\"
+                },
+                {
+                  \"type\": \"FactSet\",
+                  \"facts\": [
+                    {
+                      \"title\": \"📦 Version:\",
+                      \"value\": \"${CI_COMMIT_TAG}\"
+                    }
+                  ]
+                },
+                {
+                  \"type\": \"TextBlock\",
+                  \"text\": \"✨ What's New:\",
+                  \"weight\": \"bolder\",
+                  \"spacing\": \"medium\"
+                },
+                {
+                  \"type\": \"TextBlock\",
+                  \"text\": \"${CI_COMMIT_MESSAGE}\",
+                  \"wrap\": true
+                },
+                {
+                  \"type\": \"TextBlock\",
+                  \"text\": \"🔗 Quick Links:\",
+                  \"weight\": \"bolder\",
+                  \"spacing\": \"medium\"
+                },
+                {
+                  \"type\": \"TextBlock\",
+                  \"text\": \"• [📚 Documentation](https://${CI_PROJECT_NAMESPACE}.gitlab.io/${CI_PROJECT_NAME}/)\",
+                  \"wrap\": true
+                },
+                {
+                  \"type\": \"TextBlock\",
+                  \"text\": \"• [🐍 PyPI Package](https://pypi.org/project/morphocore)\",
+                  \"wrap\": true
+                },
+                {
+                  \"type\": \"TextBlock\",
+                  \"text\": \"⚡ Update Now:\",
+                  \"weight\": \"bolder\",
+                  \"spacing\": \"medium\"
+                },
+                {
+                  \"type\": \"CodeBlock\",
+                  \"codeSnippet\": \"pip install --upgrade morphocore\",
+                  \"language\": \"bash\"
+                },
+                {
+                  \"type\": \"TextBlock\",
+                  \"text\": \"💡 *Don't forget to update your environment!*\",
+                  \"isSubtle\": true,
+                  \"spacing\": \"small\"
+                }
+              ]
+            }
+          }]
+        }" \
+        "${TEAMS_WEBHOOK_URL}"
   rules:
     - if: $CI_COMMIT_TAG
-  when: on_success
-  dependencies:
-    - deploy-pypi
+  allow_failure: true
