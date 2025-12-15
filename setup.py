@@ -31,9 +31,17 @@ elif sys.platform.startswith('win'):
 else:
     cxx_flags = ['-O2', '-std=c++17']
     link_args = []
-cxx_flags
-torch_version = os.environ.get("TORCH_VERSION", torch.__version__.split('+')[0])
-version = BASE_VERSION + "." + torch_version.replace(".", "")
+
+torch_version_full = os.environ.get("TORCH_VERSION", torch.__version__.split('+')[0])
+torch_version_parts = torch_version_full.split('.')
+torch_major = torch_version_parts[0]
+torch_minor = torch_version_parts[1] if len(torch_version_parts) > 1 else "0"
+
+
+version = f"{BASE_VERSION}.{torch_major}{torch_minor}"
+
+torch_next_minor = int(torch_minor) + 1
+torch_requirement = f"torch>={torch_major}.{torch_minor}.0,<{torch_major}.{torch_next_minor}.0"
 
 if with_cuda:
     Extension = CUDAExtension
@@ -69,7 +77,6 @@ else:
         'cxx': cxx_flags
     }
 
-# ✨ Setup simplifié - SEULEMENT les extensions
 setup(
     ext_modules=[
         Extension(
@@ -94,7 +101,7 @@ setup(
     include_package_data=False,
     version=version,
     install_requires=[
-        f"torch=={torch_version}" if torch_version else "torch>=2.0.0",
+        torch_requirement,
         "numpy>=1.19.0",
     ]
     
