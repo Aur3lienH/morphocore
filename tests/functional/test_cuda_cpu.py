@@ -21,8 +21,6 @@ class TestCPUvsCUDA:
         if channel_merge_mode == 'identity' and input_size[1] != kernel_size[0]:
             pytest.skip(f"IDENTITY mode requires in_channels == out_channels, got {input_size[1]} != {kernel_size[0]}")
 
-        if channel_merge_mode == 'identity' and operation.startswith('S'):
-            pytest.skip(f"IDENTITY mode for SMorph, not yet implemented !")
 
         
         torch.manual_seed(42)
@@ -74,9 +72,7 @@ class TestCPUvsCUDA:
         if channel_merge_mode == 'identity' and input_size[1] != kernel_size[0]:
             pytest.skip(f"IDENTITY mode requires in_channels == out_channels, got {input_size[1]} != {kernel_size[0]}")
 
-        
-        if channel_merge_mode == 'identity' and operation.startswith('S'):
-            pytest.skip(f"IDENTITY mode for SMorph, not yet implemented !")
+    
         
         torch.manual_seed(42)
         

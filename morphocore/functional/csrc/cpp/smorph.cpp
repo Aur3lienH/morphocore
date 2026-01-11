@@ -52,18 +52,11 @@ torch::Tensor Smorph<merge>::forward(torch::autograd::AutogradContext* ctx, torc
         torch::Tensor reference_values = torch::zeros({batch_size, weight_shape[0], height, width}, input.options());
         torch::Tensor max_values = torch::zeros({batch_size, weight_shape[0], height, width}, input.options());
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_forward_kernel", ([&] {
-                                       if (merge == MORPHO_MERGE::IDENTITY)
-                                       {
-                                           TORCH_CHECK(false, "Identity merge not supported in CUDA yet");
-                                       }
-                                       else
-                                       {
-                                           morpho_smorph_forward_kernel<merge, scalar_t>(
-                                               input_correct_dims.data_ptr<scalar_t>(), weight_correct_dims.data_ptr<scalar_t>(),
-                                               alpha.data_ptr<scalar_t>(), output.data_ptr<scalar_t>(), reference_values.data_ptr<scalar_t>(),
-                                               max_values.data_ptr<scalar_t>(), batch_size, in_channels, out_channels, height, width, kernel_height,
-                                               kernel_width, kernel_height_half, kernel_width_half);
-                                       }
+                                       morpho_smorph_forward_kernel<merge, scalar_t>(
+                                           input_correct_dims.data_ptr<scalar_t>(), weight_correct_dims.data_ptr<scalar_t>(),
+                                           alpha.data_ptr<scalar_t>(), output.data_ptr<scalar_t>(), reference_values.data_ptr<scalar_t>(),
+                                           max_values.data_ptr<scalar_t>(), batch_size, in_channels, out_channels, height, width, kernel_height,
+                                           kernel_width, kernel_height_half, kernel_width_half);
                                    }));
         output = input_dim_manager.ToOriginalTensor(output);
         ctx->save_for_backward({output, reference_values, max_values, alpha, input_correct_dims, weight_correct_dims});
@@ -134,18 +127,11 @@ torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradCo
         auto grad_output_contig = grad_outputs[0].contiguous();
 
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_backward_kernel", ([&] {
-                                       if (merge == MORPHO_MERGE::IDENTITY)
-                                       {
-                                           TORCH_CHECK(false, "Identity merge not supported in CUDA yet");
-                                       }
-                                       else
-                                       {
-                                           morpho_smorph_backward_kernel<merge, scalar_t>(
-                                               grad_output_contig.data_ptr<scalar_t>(), grad_input.data_ptr<scalar_t>(),
-                                               grad_weight.data_ptr<scalar_t>(), grad_alpha.data_ptr<scalar_t>(), alpha_contig.data_ptr<scalar_t>(),
-                                               input_contig.data_ptr<scalar_t>(), weight_contig.data_ptr<scalar_t>(), batch_size, in_channels,
-                                               out_channels, height, width, kernel_height, kernel_width, kernel_height_half, kernel_width_half);
-                                       }
+                                       morpho_smorph_backward_kernel<merge, scalar_t>(
+                                           grad_output_contig.data_ptr<scalar_t>(), grad_input.data_ptr<scalar_t>(), grad_weight.data_ptr<scalar_t>(),
+                                           grad_alpha.data_ptr<scalar_t>(), alpha_contig.data_ptr<scalar_t>(), input_contig.data_ptr<scalar_t>(),
+                                           weight_contig.data_ptr<scalar_t>(), batch_size, in_channels, out_channels, height, width, kernel_height,
+                                           kernel_width, kernel_height_half, kernel_width_half);
                                    }));
 
         cudaError_t err = cudaGetLastError();
@@ -156,6 +142,7 @@ torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradCo
         return {grad_input, grad_weight, grad_alpha};
 #endif
     }
+
     else
     {
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_backward_cpu", [&] {
