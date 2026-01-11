@@ -11,13 +11,19 @@ class TestCPUvsCUDA:
         ((2, 3, 8, 8), (2, 3, 3, 3)),
         ((1, 1, 5, 7), (1, 1, 3, 3)),
     ])
-    @pytest.mark.parametrize("channel_merge_mode", ['sum', 'mean', 'min', 'max'])
+    @pytest.mark.parametrize("channel_merge_mode", ['sum', 'mean', 'min', 'max', 'identity'])
     def test_forward_cpu_vs_cuda(self, operation, input_size, kernel_size, channel_merge_mode):
         """Test that CPU and CUDA produce identical forward results."""
         if not torch.cuda.is_available():
             pytest.skip("CUDA is not available.")
 
-        
+        # IDENTITY requires in_channels == out_channels
+        if channel_merge_mode == 'identity' and input_size[1] != kernel_size[0]:
+            pytest.skip(f"IDENTITY mode requires in_channels == out_channels, got {input_size[1]} != {kernel_size[0]}")
+
+        if channel_merge_mode == 'identity' and operation.startswith('S'):
+            pytest.skip(f"IDENTITY mode for SMorph, not yet implemented !")
+
         
         torch.manual_seed(42)
         input_tensor = torch.randn(*input_size, dtype=torch.float32)
@@ -57,13 +63,20 @@ class TestCPUvsCUDA:
         ((1, 1, 4, 4), (1, 1, 3, 3)),
         ((1, 1, 32, 32), (1, 1, 3, 3)),
     ])
-    @pytest.mark.parametrize("channel_merge_mode", ['sum', 'mean', 'min', 'max'])
+    @pytest.mark.parametrize("channel_merge_mode", ['sum', 'mean', 'min', 'max', 'identity'])
     def test_backward_cpu_vs_cuda(self, operation, input_size, kernel_size, channel_merge_mode):
         """Test that CPU and CUDA produce identical gradients."""
 
         if not torch.cuda.is_available():
             pytest.skip("CUDA is not available.")
         
+        # IDENTITY requires in_channels == out_channels
+        if channel_merge_mode == 'identity' and input_size[1] != kernel_size[0]:
+            pytest.skip(f"IDENTITY mode requires in_channels == out_channels, got {input_size[1]} != {kernel_size[0]}")
+
+        
+        if channel_merge_mode == 'identity' and operation.startswith('S'):
+            pytest.skip(f"IDENTITY mode for SMorph, not yet implemented !")
         
         torch.manual_seed(42)
         

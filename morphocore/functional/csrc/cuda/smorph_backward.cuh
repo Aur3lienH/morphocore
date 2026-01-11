@@ -26,7 +26,7 @@ __global__ void smorph_backward_kernel(
     if (b >= batch_size || h >= height || w >= width)
         return;
 
-    const int kernel_size = kernel_height * kernel_width;
+    //const int kernel_size = kernel_height * kernel_width;
     const scalar_t scale_factor = (merge == MORPHO_MERGE::AVERAGE) ? 
         static_cast<scalar_t>(1.0) / static_cast<scalar_t>(input_channels) : 
         static_cast<scalar_t>(1.0);
