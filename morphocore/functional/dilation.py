@@ -2,7 +2,9 @@ import torch
 from cpp_operation import morpho_dilation
 from morphocore.functional.merge_enum import str_to_merge, str_to_padding
 
-def dilation(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'geodesic', save_indices: bool = True) -> torch.Tensor:
+def dilation(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum', 
+             padding_mode: str = 'geodesic', save_indices: bool = True,
+             weight_dropout: float = 0.0, training: bool = False) -> torch.Tensor:
     """
     Apply morphological dilation operation on input tensor.
 
@@ -25,6 +27,13 @@ def dilation(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum', 
         Disabling it may reduce memory usage.
         Enabling it is recommended for performance when training.
         Default is True.
+    weight_dropout : float, optional
+        Probability of dropping weights in the structuring element during training.
+        Dropped weights are set to -inf so they never contribute to the maximum.
+        Must be in range [0, 1). Default is 0.0 (no dropout).
+    training : bool, optional
+        Whether the model is in training mode. Dropout is only applied when True.
+        Default is False.
 
     Returns
     -------
@@ -34,6 +43,8 @@ def dilation(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum', 
     Notes
     -----
     The operation is defined as: (x ⊕ w)[i,j] = max{x[i+m, j+n] + w[m,n]}.
+    When weight_dropout is applied, dropped weights are set to -inf, ensuring
+    x + (-inf) = -inf and they are never selected as the maximum.
     Supports GPU acceleration via CUDA and backpropagation for trainable layers.
 
     Examples
@@ -45,6 +56,18 @@ def dilation(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum', 
     >>> output = dilation(x, w, channel_merge_mode='max')
     >>> output.shape
     torch.Size([1, 3, 32, 32])
+    >>> # With dropout during training
+    >>> output = dilation(x, w, weight_dropout=0.2, training=True)
     """
+    # Apply weight dropout if in training mode
+    if training and weight_dropout > 0.0:
+        dropout_mask = torch.rand_like(w) > weight_dropout
+        for i in range(w.shape[0]):
+            for j in range(w.shape[1]):
+                if not dropout_mask[i, j].any():
+                    flat_idx = torch.randint(0, dropout_mask[i, j].numel(), (1,)).item()
+                    dropout_mask[i, j].view(-1)[flat_idx] = True
+        
+        w = torch.where(dropout_mask, w, torch.tensor(-float('inf'), device=w.device, dtype=w.dtype))
     
     return morpho_dilation(x, w, str_to_merge(channel_merge_mode), str_to_padding(padding_mode), save_indices)
