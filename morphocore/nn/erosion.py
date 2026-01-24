@@ -25,6 +25,9 @@ class Erosion(MorphoModule):
     save_indices : bool, optional
         Whether to save the indices of minimum values for gradient computation.
         Default is True.
+    weight_dropout : float, optional
+        Probability of dropping weights in the structuring element during training.
+        Must be in range [0, 1). Default is 0.0 (no dropout).
 
     Attributes
     ----------
@@ -34,6 +37,8 @@ class Erosion(MorphoModule):
         Channel merging strategy.
     padding_mode : str
         Border padding strategy.
+    weight_dropout : float
+        Weight dropout probability.
 
     Notes
     -----
@@ -41,6 +46,8 @@ class Erosion(MorphoModule):
     (x ⊖ w)[i,j] = min{x[i+m, j+n] - w[m,n]}
     
     The structuring element is trainable and can be optimized via backpropagation.
+    When weight_dropout > 0, randomly selected weights are set to -inf during training,
+    preventing them from contributing to the minimum operation.
     Supports GPU acceleration via CUDA.
 
     Examples
@@ -53,9 +60,10 @@ class Erosion(MorphoModule):
     >>> output.shape
     torch.Size([1, 16, 32, 32])
     
-    Training example:
+    Training example with dropout:
     
-    >>> layer = Erosion(3, 16, kernel_size=5)
+    >>> layer = Erosion(3, 16, kernel_size=5, weight_dropout=0.2)
+    >>> layer.train()  # Enable training mode
     >>> optimizer = torch.optim.Adam(layer.parameters(), lr=0.001)
     >>> x = torch.randn(8, 3, 32, 32)
     >>> output = layer(x)
@@ -68,11 +76,16 @@ class Erosion(MorphoModule):
     morphocore.functional.erosion : Functional interface
     Dilation : Morphological dilation layer
     """
-    def __init__(self, in_channels : int, out_channels : int, kernel_size : tuple, channel_merge_mode: str = "sum", padding_mode: str = "geodesic", dtype: torch.dtype = torch.float32, save_indices: bool = True):
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: tuple, 
+                 channel_merge_mode: str = "sum", padding_mode: str = "geodesic", 
+                 dtype: torch.dtype = torch.float32, save_indices: bool = True,
+                 weight_dropout: float = 0.0):
         if type(kernel_size) is int:
             kernel_size = (kernel_size, kernel_size)
         self.save_indices = save_indices
+        self.weight_dropout = weight_dropout
         super().__init__(in_channels, out_channels, kernel_size, channel_merge_mode, padding_mode, dtype=dtype)
 
     def forward(self, x):
-        return erosion(x, self.weight, self.channel_merge_mode, self.padding_mode, self.save_indices)
+        return erosion(x, self.weight, self.channel_merge_mode, self.padding_mode, 
+                      self.save_indices, self.weight_dropout, self.training)
