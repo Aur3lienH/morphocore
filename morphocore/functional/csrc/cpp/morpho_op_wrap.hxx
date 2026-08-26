@@ -44,17 +44,68 @@ torch::Scalar get_padding_value(torch::ScalarType dtype)
     return torch::Scalar(0);
 }
 
+/// @brief Border value the CUDA path materialises around the input, mirroring morpho_fill_value.
+/// @tparam Op Morphological operation, only used to pick the geodesic neutral element.
+/// @param padding Padding mode requested by the caller.
+/// @param constant_value Value used by MORPHO_PADDING::CONSTANT, ignored by the other modes.
+/// @param dtype Data type of the tensor elements.
+template <MORPHO_OPERATION Op>
+torch::Scalar morpho_fill_scalar(MORPHO_PADDING padding, double constant_value, torch::ScalarType dtype)
+{
+    switch (padding)
+    {
+        case MORPHO_PADDING::ZERO: return torch::Scalar(0.0);
+        case MORPHO_PADDING::CONSTANT: return torch::Scalar(constant_value);
+        // GEODESIC, and the value REPLICATE never reads.
+        default: return get_padding_value<Op>(dtype);
+    }
+}
+
+/// @brief Materialise the border so the CUDA kernels can read a plain padded buffer and stay
+///        completely unaware of the padding mode.
+/// @tparam kind Padding family.
+/// @param pad_h Rows added on the top and on the bottom.
+/// @param pad_w Columns added on the left and on the right.
+/// @param fill Fill value from morpho_fill_scalar, unused when kind is REPLICATE.
+template <MORPHO_PADDING_KIND kind>
+torch::Tensor morpho_pad_input(const torch::Tensor& input, int64_t pad_h, int64_t pad_w, const torch::Scalar& fill)
+{
+    if constexpr (kind == MORPHO_PADDING_KIND::REPLICATE)
+    {
+        const int64_t height = input.size(2);
+        const int64_t width = input.size(3);
+
+        // replication_pad2d is a single fused kernel but rejects pads larger than the image, which
+        // happens for structuring elements wider than the input. A clamped gather covers that case.
+        if (pad_h < height && pad_w < width)
+        {
+            return at::replication_pad2d(input, {pad_w, pad_w, pad_h, pad_h});
+        }
+
+        const auto index_options = input.options().dtype(torch::kLong);
+        auto rows = torch::arange(-pad_h, height + pad_h, index_options).clamp_(0, height - 1);
+        auto cols = torch::arange(-pad_w, width + pad_w, index_options).clamp_(0, width - 1);
+        return input.index_select(2, rows).index_select(3, cols);
+    }
+
+    return torch::constant_pad_nd(input, torch::IntList{pad_w, pad_w, pad_h, pad_h}, fill);
+}
+
 /// @brief Forward wrapper for morphological operations. (Choose between CPU and CUDA)
 /// @tparam Op Morphological operation (dilation or erosion).
 /// @tparam merge Merge channel policy.
+/// @tparam kind Padding family that implements `padding`.
 /// @param ctx context to save tensors for backward pass.
 /// @param input Input tensor of shape [batch, in_channels, height, width].
 /// @param weight Weight tensor of shape [out_channels, in_channels, kernel_height, kernel_width].
+/// @param padding Padding mode requested by the caller.
+/// @param padding_value Value used by MORPHO_PADDING::CONSTANT, ignored by the other modes.
 /// @return Output tensor of shape [batch, out_channels, height, width].
-template <MORPHO_OPERATION Op, MORPHO_MERGE merge, MORPHO_PADDING padding>
-torch::Tensor MorphoOperation<Op, merge, padding>::forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight,
-                                                           bool save_indices)
+template <MORPHO_OPERATION Op, MORPHO_MERGE merge, MORPHO_PADDING_KIND kind>
+torch::Tensor MorphoOperation<Op, merge, kind>::forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight,
+                                                        bool save_indices, MORPHO_PADDING padding, double padding_value)
 {
+    TORCH_CHECK(padding_kind(padding) == kind, "Padding mode does not belong to the instantiated padding family");
     TensorInputDim input_dim_manager(input);
     TensorWeightDim weight_dim_manager(weight);
     torch::Tensor input_correct_dims = input_dim_manager.To4DTensor(input);
@@ -101,9 +152,8 @@ torch::Tensor MorphoOperation<Op, merge, padding>::forward(torch::autograd::Auto
             max_indices = torch::empty({0}, input.options().dtype(torch::kLong));
         }
 
-        auto padding_value = get_padding_value<Op>(input_correct_dims.scalar_type());
-        auto padded_input = torch::constant_pad_nd(
-            input_correct_dims, torch::IntList{kernel_width_half, kernel_width_half, kernel_height_half, kernel_height_half}, padding_value);
+        auto fill = morpho_fill_scalar<Op>(padding, padding_value, input_correct_dims.scalar_type());
+        auto padded_input = morpho_pad_input<kind>(input_correct_dims, kernel_height_half, kernel_width_half, fill);
 
         padded_input = padded_input.contiguous();
 
@@ -156,15 +206,18 @@ torch::Tensor MorphoOperation<Op, merge, padding>::forward(torch::autograd::Auto
         constexpr const char* cpu_operation_name = "morpho_operation_forward_cpu";
 
         AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), cpu_operation_name, [&] {
+            const scalar_t fill = morpho_fill_value<Op, scalar_t>(padding, padding_value);
+
             if (should_save_indices)
             {
-                auto result = morpho_operation_forward_cpu_dispatcher<Op, merge, padding, scalar_t, true>(input_correct_dims, weight_correct_dims);
+                auto result =
+                    morpho_operation_forward_cpu_dispatcher<Op, merge, kind, scalar_t, true>(input_correct_dims, weight_correct_dims, fill);
                 output = std::get<0>(result);
                 max_indices = std::get<1>(result);
             }
             else
             {
-                output = morpho_operation_forward_cpu_dispatcher<Op, merge, padding, scalar_t, false>(input_correct_dims, weight_correct_dims);
+                output = morpho_operation_forward_cpu_dispatcher<Op, merge, kind, scalar_t, false>(input_correct_dims, weight_correct_dims, fill);
                 max_indices = torch::empty({0}, torch::kLong);
             }
         });
@@ -172,6 +225,9 @@ torch::Tensor MorphoOperation<Op, merge, padding>::forward(torch::autograd::Auto
 
     output = input_dim_manager.ToOriginalTensor(output);
     ctx->save_for_backward({input_correct_dims, weight_correct_dims, max_indices});
+    // The padding mode is not a tensor, so it travels to backward through saved_data.
+    ctx->saved_data["padding"] = static_cast<int64_t>(padding);
+    ctx->saved_data["padding_value"] = padding_value;
     return output;
 }
 
@@ -181,14 +237,16 @@ torch::Tensor MorphoOperation<Op, merge, padding>::forward(torch::autograd::Auto
 /// @param ctx context to retrieve saved tensors from forward pass.
 /// @param grad_outputs Gradient tensors from the next layer.
 /// @return Gradient tensors for the input and weight.
-template <MORPHO_OPERATION Op, MORPHO_MERGE merge, MORPHO_PADDING padding>
-torch::autograd::tensor_list MorphoOperation<Op, merge, padding>::backward(torch::autograd::AutogradContext* ctx,
-                                                                           torch::autograd::tensor_list grad_outputs)
+template <MORPHO_OPERATION Op, MORPHO_MERGE merge, MORPHO_PADDING_KIND kind>
+torch::autograd::tensor_list MorphoOperation<Op, merge, kind>::backward(torch::autograd::AutogradContext* ctx,
+                                                                        torch::autograd::tensor_list grad_outputs)
 {
     auto saved = ctx->get_saved_variables();
     auto input = saved[0];
     auto weight = saved[1];
     auto max_indices = saved[2];
+    const auto padding = static_cast<MORPHO_PADDING>(ctx->saved_data["padding"].toInt());
+    const double padding_value = ctx->saved_data["padding_value"].toDouble();
     auto grad_output = grad_outputs[0];
     grad_output = grad_output.contiguous();
     torch::Tensor grad_input;
@@ -226,9 +284,8 @@ torch::autograd::tensor_list MorphoOperation<Op, merge, padding>::backward(torch
         grad_weight.contiguous();
 
         // Recreate padded input for backward pass
-        auto padding_value = get_padding_value<Op>(input.scalar_type());
-        auto padded_input = torch::constant_pad_nd(
-            input, torch::IntList{kernel_width_half, kernel_width_half, kernel_height_half, kernel_height_half}, padding_value);
+        auto fill = morpho_fill_scalar<Op>(padding, padding_value, input.scalar_type());
+        auto padded_input = morpho_pad_input<kind>(input, kernel_height_half, kernel_width_half, fill);
 
         // Ensure padded input is contiguous
         padded_input = padded_input.contiguous();
@@ -288,13 +345,15 @@ torch::autograd::tensor_list MorphoOperation<Op, merge, padding>::backward(torch
 
         torch::autograd::tensor_list result;
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), cpu_operation_name, [&] {
+            const scalar_t fill = morpho_fill_value<Op, scalar_t>(padding, padding_value);
+
             if (indices_were_saved)
             {
-                result = morpho_operation_backward_cpu_dispatch<Op, merge, padding, scalar_t, true>(input, weight, grad_output, max_indices);
+                result = morpho_operation_backward_cpu_dispatch<Op, merge, kind, scalar_t, true>(input, weight, grad_output, max_indices, fill);
             }
             else
             {
-                result = morpho_operation_backward_cpu_dispatch<Op, merge, padding, scalar_t, false>(input, weight, grad_output, max_indices);
+                result = morpho_operation_backward_cpu_dispatch<Op, merge, kind, scalar_t, false>(input, weight, grad_output, max_indices, fill);
             }
         });
 
@@ -302,5 +361,6 @@ torch::autograd::tensor_list MorphoOperation<Op, merge, padding>::backward(torch
         grad_weight = result[1];
     }
 
-    return {grad_input, grad_weight, torch::Tensor()};
+    // One undefined gradient per non differentiable forward argument: save_indices, padding, padding_value.
+    return {grad_input, grad_weight, torch::Tensor(), torch::Tensor(), torch::Tensor()};
 }

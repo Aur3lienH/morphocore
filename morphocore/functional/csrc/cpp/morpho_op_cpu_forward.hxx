@@ -11,6 +11,7 @@
 #include "morpho_op_enum.hpp"
 #include "morpho_merge_policy.hpp"
 #include "morpho_op_policy.hpp"
+#include "morpho_padding_policy.hpp"
 #include "morpho_op_cpu_forward_linear.hxx"
 
 // TODO: Handle the save_index case in backward pass and with multiple channels.
@@ -18,12 +19,14 @@
 /// @tparam T Data type of tensor elements.
 /// @tparam op Morphological operation type (e.g., dilation, erosion).
 /// @tparam merge Merge policy for combining results across channels.
+/// @tparam kind Padding family used for out of bounds taps.
 /// @tparam save_index If true, saves the index of the maximal/minimal kernel position for each output element.
 /// @param input Input tensor of shape [batch, channels, height, width].
 /// @param weight Morphological kernel tensor of shape [out_channels, in_channels, kernel_height, kernel_width].
+/// @param fill Border fill value, see morpho_fill_value. Unused when kind is REPLICATE.
 /// @return Output tensor, or tuple (output, indices) if save_index is true.
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index>
-auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight)
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING_KIND kind, typename T, bool save_index>
+auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight, T fill)
 {
     // Policy for choosing between erosion and dilation.
     using Policy = MorphoPolicyCPU<T, op>;
@@ -68,7 +71,6 @@ auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight)
         indices_ptr = max_indices.template data_ptr<int64_t>();
     }
 
-    constexpr T PADDING_VAL = Policy::padding_value();
     constexpr T INITIAL_VAL = Policy::initial_value();
 
     // Smaller tiles for better cache utilization
@@ -118,28 +120,13 @@ auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight)
                                     for (int64_t kh = 0; kh < kernel_height; kh++)
                                     {
                                         const int64_t ph = h + kernel_height_half - kh;
-                                        const bool h_valid = (ph >= 0 && ph < height);
+                                        const T* input_row = morpho_row<kind>(input_channel, ph, height, width);
 
                                         for (int64_t kw = 0; kw < kernel_width; kw++, k++)
                                         {
                                             const int64_t pw = w + kernel_width_half - kw;
-                                            const bool w_valid = (pw >= 0 && pw < width);
-                                            T input_val;
-                                            if constexpr (padding == MORPHO_PADDING::GEODESIC)
-                                            {
-                                                input_val = (h_valid && w_valid) ? input_channel[ph * width + pw] : PADDING_VAL;
-                                            }
-                                            else if constexpr (padding == MORPHO_PADDING::REPLICATE)
-                                            {
-                                                const int64_t ph_rep = std::min(std::max(ph, int64_t(0)), height - 1);
-                                                const int64_t pw_rep = std::min(std::max(pw, int64_t(0)), width - 1);
-                                                input_val = input_channel[ph_rep * width + pw_rep];
-                                            }
-                                            else
-                                            {
-                                                throw std::runtime_error("morpho_op_cpu_forward: Unsupported padding mode.");
-                                            }
 
+                                            const T input_val = morpho_load_row<kind>(input_row, pw, width, fill);
                                             const T val = Policy::combine(input_val, weight_in[k]);
 
                                             if (Policy::is_better(val, best_value))
@@ -186,13 +173,15 @@ auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight)
 ///        otherwise.
 /// @tparam op Morphological operation type (e.g., dilation, erosion).
 /// @tparam merge Merge policy for combining results across channels.
+/// @tparam kind Padding family used for out of bounds taps.
 /// @tparam T Data type of tensor elements.
 /// @tparam save_index If true, saves the index of the maximal/minimal kernel position for each output element.
 /// @param input Input tensor of shape [batch, channels, height, width].
 /// @param weight Morphological kernel tensor of shape [out_channels, in_channels, kernel_height, kernel_width].
+/// @param fill Border fill value, see morpho_fill_value. Unused when kind is REPLICATE.
 /// @return Output tensor, or tuple (output, indices) if save_index is true.
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index>
-auto morpho_operation_forward_cpu_dispatcher(torch::Tensor input, torch::Tensor weight)
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING_KIND kind, typename T, bool save_index>
+auto morpho_operation_forward_cpu_dispatcher(torch::Tensor input, torch::Tensor weight, T fill)
 {
     const auto weight_shape = weight.sizes();
     const int64_t kernel_height = weight_shape[2];
@@ -213,8 +202,8 @@ auto morpho_operation_forward_cpu_dispatcher(torch::Tensor input, torch::Tensor 
 
     if constexpr (merge == MORPHO_MERGE::IDENTITY)
     {
-        return morpho_operation_forward_identity_cpu<op, padding, T, save_index>(input, weight);
+        return morpho_operation_forward_identity_cpu<op, kind, T, save_index>(input, weight, fill);
     }
 
-    return morpho_operation_forward_cpu<op, merge, padding, T, save_index>(input, weight);
+    return morpho_operation_forward_cpu<op, merge, kind, T, save_index>(input, weight, fill);
 }

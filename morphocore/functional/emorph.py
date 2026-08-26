@@ -4,7 +4,7 @@ from torch.functional import F
 from morphocore.functional import dilation
 from morphocore.functional import erosion
 
-def emorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'geodesic', save_indices: bool = True) -> torch.Tensor:
+def emorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'geodesic', save_indices: bool = True, padding_value: float = 0.0) -> torch.Tensor:
     """
     Apply morphological interpolation between erosion and dilation.
     
@@ -27,7 +27,10 @@ def emorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_
         'sum', 'max', 'min', 'average' or 'identity'. Default is 'sum'.
     padding_mode : str, optional
         Padding strategy to handle border pixels. Options include:
-        'geodesic' or 'replicate'. Default is 'geodesic'.
+        'zero', 'geodesic', 'constant' or 'replicate'. Default is 'geodesic'.
+    padding_value : float, optional
+        Border value used when padding_mode is 'constant'. Ignored by the other
+        padding modes. Default is 0.0.
     save_indices : bool, optional
         Whether to save the indices of extremum values for gradient computation if the implementation exists for the specific configuration.
         Disabling it may reduce memory usage.
@@ -57,8 +60,8 @@ def emorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_
     >>> output.shape
     torch.Size([1, 3, 32, 32])
     """
-    out_erosion = erosion(x, w, channel_merge_mode=channel_merge_mode, padding_mode=padding_mode, save_indices=save_indices)
-    out_dilation = dilation(x, w, channel_merge_mode=channel_merge_mode, padding_mode=padding_mode, save_indices=save_indices)
+    out_erosion = erosion(x, w, channel_merge_mode=channel_merge_mode, padding_mode=padding_mode, save_indices=save_indices, padding_value=padding_value)
+    out_dilation = dilation(x, w, channel_merge_mode=channel_merge_mode, padding_mode=padding_mode, save_indices=save_indices, padding_value=padding_value)
 
     soft = torch.sigmoid(alpha.mean(dim=1))  # (C_out,)
     soft = soft.view(1, -1, 1, 1)  # (1, C_out, 1, 1)

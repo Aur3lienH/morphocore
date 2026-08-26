@@ -26,7 +26,7 @@ class Opening(nn.Module):
         Note: The dilation step always uses 'identity' mode.
     padding_mode : str, optional
         Padding strategy to handle border pixels. Options include:
-        'geodesic' or 'replicate'. Default is 'replicate'.
+        'zero', 'geodesic', 'constant' or 'replicate'. Default is 'replicate'.
     dtype : torch.dtype, optional
         Data type for the weight parameters. Default is torch.float32.
     save_indices : bool, optional
@@ -81,7 +81,8 @@ class Opening(nn.Module):
     """
 
     def __init__(self, in_channels: int, out_channels: int, kernel_size, channel_merge_mode: str = "sum", 
-                 padding_mode: str = "replicate", dtype: torch.dtype = torch.float32, save_indices: bool = True):
+                 padding_mode: str = "replicate", dtype: torch.dtype = torch.float32, save_indices: bool = True,
+                 padding_value: float = 0.0):
         super(Opening, self).__init__()
         
         if type(kernel_size) is int:
@@ -94,6 +95,7 @@ class Opening(nn.Module):
             kernel_size=kernel_size,
             channel_merge_mode=channel_merge_mode,
             padding_mode=padding_mode,
+            padding_value=padding_value,
             dtype=dtype,
             save_indices=save_indices
         )
@@ -105,6 +107,7 @@ class Opening(nn.Module):
             kernel_size=kernel_size,
             channel_merge_mode='identity',  # Always identity for opening
             padding_mode=padding_mode,
+            padding_value=padding_value,
             dtype=dtype,
             save_indices=save_indices
         )

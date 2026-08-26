@@ -25,20 +25,28 @@ def str_to_merge(mode: str) -> MorphoMerge:
     else:
         raise ValueError(f"Unknown merge mode: {mode}")
     
+_PADDING_MODES = {
+    "zero": MorphoPadding.ZERO,
+    "geodesic": MorphoPadding.GEODESIC,
+    "constant": MorphoPadding.CONSTANT,
+    "replicate": MorphoPadding.REPLICATE,
+}
+
+
 def str_to_padding(mode: str) -> MorphoPadding:
     """
     Convert a string to a MorphoPadding enum.
-    
+
     Args:
-        mode (str): "geodesic", "replicate"
-    
+        mode (str): "zero", "geodesic", "constant" or "replicate"
+
     Returns:
         MorphoPadding: Corresponding enum value.
     """
 
-    if mode == "geodesic":
-        return MorphoPadding.GEODESIC
-    elif mode == "replicate":
-        return MorphoPadding.REPLICATE
-    else:
-        raise ValueError(f"Unknown padding mode: {mode}")
+    try:
+        return _PADDING_MODES[mode]
+    except KeyError:
+        raise ValueError(
+            f"Unknown padding mode: {mode}. Expected one of {sorted(_PADDING_MODES)}."
+        ) from None

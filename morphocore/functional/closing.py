@@ -2,7 +2,7 @@ import torch
 from morphocore.functional import dilation, erosion
 
 
-def closing(x: torch.Tensor, w_dilation: torch.Tensor, w_erosion: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'geodesic', save_indices: bool = True) -> torch.Tensor:
+def closing(x: torch.Tensor, w_dilation: torch.Tensor, w_erosion: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'geodesic', save_indices: bool = True, padding_value: float = 0.0) -> torch.Tensor:
     """
     Apply morphological closing operation (dilation followed by erosion).
 
@@ -24,7 +24,10 @@ def closing(x: torch.Tensor, w_dilation: torch.Tensor, w_erosion: torch.Tensor, 
         Note: The erosion step always uses 'identity' mode.
     padding_mode : str, optional
         Padding strategy to handle border pixels. Options include:
-        'geodesic' or 'replicate'. Default is 'geodesic'.
+        'zero', 'geodesic', 'constant' or 'replicate'. Default is 'geodesic'.
+    padding_value : float, optional
+        Border value used when padding_mode is 'constant'. Ignored by the other
+        padding modes. Default is 0.0.
     save_indices : bool, optional
         Whether to save the indices of extremum values for gradient computation.
         Disabling it may reduce memory usage.
@@ -79,5 +82,5 @@ def closing(x: torch.Tensor, w_dilation: torch.Tensor, w_erosion: torch.Tensor, 
     dilation : Morphological dilation operation
     erosion : Morphological erosion operation
     """
-    dilated = dilation(x, w_dilation, channel_merge_mode, padding_mode, save_indices)
-    return erosion(dilated, w_erosion, 'identity', padding_mode, save_indices)
+    dilated = dilation(x, w_dilation, channel_merge_mode, padding_mode, save_indices, padding_value=padding_value)
+    return erosion(dilated, w_erosion, 'identity', padding_mode, save_indices, padding_value=padding_value)

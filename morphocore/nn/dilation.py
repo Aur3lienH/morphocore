@@ -20,7 +20,7 @@ class Dilation(MorphoModule):
         'sum', 'max', 'min', 'average' or 'identity'. Default is 'sum'.
     padding_mode : str, optional
         Padding strategy to handle border pixels. Options include:
-        'geodesic' or 'replicate'. Default is 'geodesic'.
+        'zero', 'geodesic', 'constant' or 'replicate'. Default is 'geodesic'.
     dtype : torch.dtype, optional
         Data type for the weight parameter. Default is torch.float32.
     save_indices : bool, optional
@@ -29,6 +29,9 @@ class Dilation(MorphoModule):
     weight_dropout : float, optional
         Probability of dropping weights in the structuring element during training.
         Must be in range [0, 1). Default is 0.0 (no dropout).
+    padding_value : float, optional
+        Border value used when padding_mode is 'constant'. Ignored by the other
+        padding modes. Default is 0.0.
 
     Attributes
     ----------
@@ -77,16 +80,18 @@ class Dilation(MorphoModule):
     morphocore.functional.dilation : Functional interface
     Erosion : Morphological erosion layer
     """
-    def __init__(self, in_channels: int, out_channels: int, kernel_size: tuple, 
-                 channel_merge_mode: str = "sum", padding_mode: str = "geodesic", 
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: tuple,
+                 channel_merge_mode: str = "sum", padding_mode: str = "geodesic",
                  dtype: torch.dtype = torch.float32, save_indices: bool = True,
-                 weight_dropout: float = 0.0):
+                 weight_dropout: float = 0.0, padding_value: float = 0.0):
         if type(kernel_size) is int:
             kernel_size = (kernel_size, kernel_size)
         self.save_indices = save_indices
         self.weight_dropout = weight_dropout
-        super().__init__(in_channels, out_channels, kernel_size, channel_merge_mode, padding_mode, dtype=dtype)
+        super().__init__(in_channels, out_channels, kernel_size, channel_merge_mode, padding_mode, dtype=dtype,
+                         padding_value=padding_value)
 
     def forward(self, x):
-        return dilation(x, self.weight, self.channel_merge_mode, self.padding_mode, 
-                       self.save_indices, self.weight_dropout, self.training)
+        return dilation(x, self.weight, self.channel_merge_mode, self.padding_mode,
+                        self.save_indices, self.weight_dropout, self.training,
+                        self.padding_value)

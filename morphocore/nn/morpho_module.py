@@ -7,7 +7,7 @@ class MorphoModule(nn.Module):
     """
     Common module for Mathematical Morpholocial operations !
     """
-    def __init__(self, in_channels: int, out_channels: int, kernel_shape: tuple, channel_merge_mode: str = "sum", padding_mode: str = "replicate", dtype: torch.dtype = torch.float32):
+    def __init__(self, in_channels: int, out_channels: int, kernel_shape: tuple, channel_merge_mode: str = "sum", padding_mode: str = "replicate", dtype: torch.dtype = torch.float32, padding_value: float = 0.0):
         super().__init__()
         if channel_merge_mode == "identity":
             if in_channels != out_channels:
@@ -19,3 +19,4 @@ class MorphoModule(nn.Module):
         self.out_channels = out_channels
         self.channel_merge_mode = channel_merge_mode
         self.padding_mode = padding_mode
+        self.padding_value = padding_value

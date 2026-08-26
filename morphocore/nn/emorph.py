@@ -24,7 +24,7 @@ class EMorph(AlphaModule):
         'sum', 'max', 'min', 'average' or 'identity'. Default is 'sum'.
     padding_mode : str, optional
         Padding strategy to handle border pixels. Options include:
-        'geodesic' or 'replicate'. Default is 'geodesic'.
+        'zero', 'geodesic', 'constant' or 'replicate'. Default is 'geodesic'.
     init_alpha : float, optional
         Initial value for the alpha parameter. Default is 0.0.
     dtype : torch.dtype, optional
@@ -82,12 +82,13 @@ class EMorph(AlphaModule):
     Erosion : Standard erosion layer
     """
 
-    def __init__(self, in_channels : int, out_channels : int, kernel_size : tuple, channel_merge_mode: str = "sum", padding_mode: str = "geodesic", init_alpha: float = 0.0, dtype: torch.dtype = torch.float32, save_indices: bool = True):
+    def __init__(self, in_channels : int, out_channels : int, kernel_size : tuple, channel_merge_mode: str = "sum", padding_mode: str = "geodesic", init_alpha: float = 0.0, dtype: torch.dtype = torch.float32, save_indices: bool = True, padding_value: float = 0.0):
         if type(kernel_size) is int:
             kernel_size = (kernel_size, kernel_size)
         super().__init__(in_channels, out_channels, kernel_size, channel_merge_mode, init_alpha, dtype=dtype)
         self.save_indices = save_indices
         self.padding_mode = padding_mode
+        self.padding_value = padding_value
 
     def forward(self, x):
-        return emorph(x, self.weight, self.alpha, self.channel_merge_mode, padding_mode=self.padding_mode, save_indices=self.save_indices)
+        return emorph(x, self.weight, self.alpha, self.channel_merge_mode, padding_mode=self.padding_mode, save_indices=self.save_indices, padding_value=self.padding_value)

@@ -3,20 +3,23 @@
 #include <omp.h>
 #include "morpho_op_enum.hpp"
 #include "morpho_op_policy.hpp"
+#include "morpho_padding_policy.hpp"
 
 /// @brief Backward pass for morphological operations with IDENTITY channel merge.
 /// Each channel's gradient is computed independently.
 /// @tparam op Morphological operation type (DILATION or EROSION).
+/// @tparam kind Padding family used for out of bounds taps.
 /// @tparam T Data type of tensor elements.
 /// @tparam save_index Whether to use precomputed indices.
 /// @param input Input tensor of shape [batch, channels, height, width].
 /// @param weight Weight tensor of shape [channels, 1, kernel_height, kernel_width].
 /// @param grad_output Gradient of output tensor.
 /// @param max_indices Precomputed indices (if save_index is true).
+/// @param fill Border fill value, see morpho_fill_value. Unused when kind is REPLICATE.
 /// @return Gradients for input and weight.
-template <MORPHO_OPERATION op, MORPHO_PADDING padding, typename T, bool save_index>
+template <MORPHO_OPERATION op, MORPHO_PADDING_KIND kind, typename T, bool save_index>
 torch::autograd::tensor_list morpho_operation_backward_identity_cpu(torch::Tensor input, torch::Tensor weight, torch::Tensor grad_output,
-                                                                    torch::Tensor max_indices)
+                                                                    torch::Tensor max_indices, T fill)
 {
     using Policy = MorphoPolicyCPU<T, op>;
 
@@ -90,29 +93,13 @@ torch::autograd::tensor_list morpho_operation_backward_identity_cpu(torch::Tenso
                         for (int64_t kh = 0; kh < kernel_height; kh++)
                         {
                             const int64_t ph = h + kernel_height_half - kh;
-                            const bool h_valid = (ph >= 0 && ph < height);
+                            const T* input_row = morpho_row<kind>(input_channel, ph, height, width);
 
                             for (int64_t kw = 0; kw < kernel_width; kw++)
                             {
                                 const int64_t pw = w + kernel_width_half - kw;
-                                const bool w_valid = (pw >= 0 && pw < width);
 
-                                T input_val;
-                                if constexpr (padding == MORPHO_PADDING::GEODESIC)
-                                {
-                                    input_val = (h_valid && w_valid) ? input_channel[ph * width + pw] : Policy::padding_value();
-                                }
-                                else if constexpr (padding == MORPHO_PADDING::REPLICATE)
-                                {
-                                    const int64_t ph_rep = std::min(std::max(ph, int64_t(0)), height - 1);
-                                    const int64_t pw_rep = std::min(std::max(pw, int64_t(0)), width - 1);
-                                    input_val = input_channel[ph_rep * width + pw_rep];
-                                }
-                                else
-                                {
-                                    throw std::runtime_error("morpho_op_cpu_backward_linear: Unsupported padding mode.");
-                                }
-
+                                const T input_val = morpho_load_row<kind>(input_row, pw, width, fill);
                                 const T val = Policy::combine(input_val, weight_channel[kh * kernel_width + kw]);
 
                                 if (Policy::is_better(val, best_value))
@@ -124,7 +111,8 @@ torch::autograd::tensor_list morpho_operation_backward_identity_cpu(torch::Tenso
                             }
                         }
 
-                        // Backprop to input
+                        // Backprop to input. A winning tap on the border read padding rather than a
+                        // pixel, so it carries no input gradient, REPLICATE included.
                         const int64_t ih = h + kernel_height_half - best_kh;
                         const int64_t iw = w + kernel_width_half - best_kw;
 

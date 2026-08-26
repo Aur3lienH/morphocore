@@ -7,6 +7,7 @@
 
 #include "morpho_op_enum.hpp"
 #include "morpho_op_policy.hpp"
+#include "morpho_padding_policy.hpp"
 #include "morpho_op_cpu_backward_linear.hxx"
 
 // This function should be inlined because of the number of arguments and it is in a hot loop !
@@ -14,8 +15,10 @@
 /// @tparam T Data type of tensor elements.
 /// @tparam op Morphological operation type (e.g., dilation, erosion).
 /// @tparam merge Merge policy for combining results across channels.
+/// @tparam kind Padding family used for out of bounds taps.
 /// @tparam save_index If true, saves the index of the maximal/minimal kernel position for each output element.
 /// @tparam outside_in_channels If true, processes outside in channels.
+/// @param fill Border fill value, see morpho_fill_value. Unused when kind is REPLICATE.
 /// @param b Batch index.
 /// @param o Output channel index.
 /// @param in_channels The number of input channels.
@@ -36,12 +39,12 @@
 /// @param weight_in_stride The stride of the weight tensor in the input channel dimension.
 /// @param grad_output_batch_stride The stride of the gradient output tensor in the batch dimension.
 /// @param grad_output_channel_stride The stride of the gradient output tensor in the channel dimension.
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index, bool outside_in_channels>
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING_KIND kind, typename T, bool save_index, bool outside_in_channels>
 void morpho_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t height, int64_t width, int64_t kernel_height, int64_t kernel_width,
                              int64_t kernel_height_half, int64_t kernel_width_half, const T* __restrict__ input_ptr, const T* __restrict__ weight_ptr,
                              const T* __restrict__ grad_output_ptr, T* __restrict__ grad_input_ptr, T* __restrict__ local_grad_weight_ptr,
                              int64_t input_batch_stride, int64_t input_channel_stride, int64_t weight_out_stride, int64_t weight_in_stride,
-                             int64_t grad_output_batch_stride, int64_t grad_output_channel_stride)
+                             int64_t grad_output_batch_stride, int64_t grad_output_channel_stride, T fill)
 {
     using Policy = MorphoPolicyCPU<T, op>;
 
@@ -67,30 +70,14 @@ void morpho_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
 
                 for (int64_t kh = 0; kh < kernel_height; kh++)
                 {
+                    const int64_t ph = h + kernel_height_half - kh;
+                    const T* input_row = morpho_row<kind>(input_channel, ph, height, width);
+
                     for (int64_t kw = 0; kw < kernel_width; kw++)
                     {
-                        const int64_t ph = h + kernel_height_half - kh;
                         const int64_t pw = w + kernel_width_half - kw;
 
-                        const bool h_valid = (ph >= 0 && ph < height);
-                        const bool w_valid = (pw >= 0 && pw < width);
-
-                        T input_val;
-                        if constexpr (padding == MORPHO_PADDING::GEODESIC)
-                        {
-                            input_val = (h_valid && w_valid) ? input_channel[ph * width + pw] : Policy::padding_value();
-                        }
-                        else if constexpr (padding == MORPHO_PADDING::REPLICATE)
-                        {
-                            const int64_t ph_rep = std::min(std::max(ph, int64_t(0)), height - 1);
-                            const int64_t pw_rep = std::min(std::max(pw, int64_t(0)), width - 1);
-                            input_val = input_channel[ph_rep * width + pw_rep];
-                        }
-                        else
-                        {
-                            throw std::runtime_error("morpho_op_cpu_backward: Unsupported padding mode.");
-                        }
-
+                        const T input_val = morpho_load_row<kind>(input_row, pw, width, fill);
                         const T val = Policy::combine(input_val, weight_base[kh * kernel_width + kw]);
 
                         if (Policy::is_better(val, best_value))
@@ -105,6 +92,9 @@ void morpho_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
                 const int64_t ih = h + kernel_height_half - best_kh;
                 const int64_t iw = w + kernel_width_half - best_kw;
 
+                // A winning tap that landed on the border carries no input gradient: it read padding,
+                // not a pixel. This also holds for REPLICATE, whose gradient is therefore not routed
+                // back to the edge pixel it copied.
                 if (ih >= 0 && ih < height && iw >= 0 && iw < width)
                 {
                     const int64_t grad_input_idx = b * input_batch_stride + i * input_channel_stride + ih * width + iw;
@@ -152,12 +142,12 @@ void morpho_backward_sum_avg(int64_t b, int64_t o, int64_t in_channels, int64_t 
 /// @param weight_in_stride The stride of the weight tensor in the input channel dimension.
 /// @param grad_output_batch_stride The stride of the gradient output tensor in the batch dimension.
 /// @param grad_output_channel_stride The stride of the gradient output tensor in the channel dimension.
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index, bool outside_in_channels>
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING_KIND kind, typename T, bool save_index, bool outside_in_channels>
 void morpho_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t height, int64_t width, int64_t kernel_height, int64_t kernel_width,
                              int64_t kernel_height_half, int64_t kernel_width_half, const T* __restrict__ input_ptr, const T* __restrict__ weight_ptr,
                              const T* __restrict__ grad_output_ptr, T* __restrict__ grad_input_ptr, T* __restrict__ local_grad_weight_ptr,
                              int64_t input_batch_stride, int64_t input_channel_stride, int64_t weight_out_stride, int64_t weight_in_stride,
-                             int64_t grad_output_batch_stride, int64_t grad_output_channel_stride)
+                             int64_t grad_output_batch_stride, int64_t grad_output_channel_stride, T fill)
 
 {
 
@@ -189,30 +179,14 @@ void morpho_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
 
                 for (int64_t kh = 0; kh < kernel_height; kh++)
                 {
+                    const int64_t ph = h + kernel_height_half - kh;
+                    const T* input_row = morpho_row<kind>(input_channel, ph, height, width);
+
                     for (int64_t kw = 0; kw < kernel_width; kw++)
                     {
                         const int64_t pw = w + kernel_width_half - kw;
-                        const int64_t ph = h + kernel_height_half - kh;
 
-                        const bool h_valid = (ph >= 0 && ph < height);
-                        const bool w_valid = (pw >= 0 && pw < width);
-
-                        T input_val;
-                        if constexpr (padding == MORPHO_PADDING::GEODESIC)
-                        {
-                            input_val = (h_valid && w_valid) ? input_channel[ph * width + pw] : Policy::padding_value();
-                        }
-                        else if constexpr (padding == MORPHO_PADDING::REPLICATE)
-                        {
-                            const int64_t ph_rep = std::min(std::max(ph, int64_t(0)), height - 1);
-                            const int64_t pw_rep = std::min(std::max(pw, int64_t(0)), width - 1);
-                            input_val = input_channel[ph_rep * width + pw_rep];
-                        }
-                        else
-                        {
-                            throw std::runtime_error("morpho_op_cpu_backward: Unsupported padding mode.");
-                        }
-
+                        const T input_val = morpho_load_row<kind>(input_row, pw, width, fill);
                         const T val = Policy::combine(input_val, weight_base[kh * kernel_width + kw]);
 
                         if (Policy::is_better(val, best_value_channel))
@@ -235,6 +209,7 @@ void morpho_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
             const int64_t ih = h + kernel_height_half - best_kh;
             const int64_t iw = w + kernel_width_half - best_kw;
 
+            // See morpho_backward_sum_avg: border taps carry no input gradient, REPLICATE included.
             if (ih >= 0 && ih < height && iw >= 0 && iw < width)
             {
                 const int64_t grad_input_idx = b * input_batch_stride + best_channel * input_channel_stride + ih * width + iw;
@@ -260,15 +235,17 @@ void morpho_backward_min_max(int64_t b, int64_t o, int64_t in_channels, int64_t 
 /// @tparam T The data type of the tensor elements.
 /// @tparam op The morphological operation type (e.g., dilation, erosion).
 /// @tparam merge The merge strategy for combining gradients.
+/// @tparam kind Padding family used for out of bounds taps.
 /// @tparam save_index Whether to save the indices of the max values.
 /// @param input The input tensor.
 /// @param weight The weight tensor.
 /// @param grad_output The gradient output tensor.
 /// @param max_indices The indices of the max values.
+/// @param fill Border fill value, see morpho_fill_value. Unused when kind is REPLICATE.
 /// @return The gradient tensors for the input and weight.
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index>
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING_KIND kind, typename T, bool save_index>
 torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, torch::Tensor weight, torch::Tensor grad_output,
-                                                           torch::Tensor max_indices)
+                                                           torch::Tensor max_indices, T fill)
 {
     const auto input_shape = input.sizes();
     const auto weight_shape = weight.sizes();
@@ -342,17 +319,17 @@ torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, 
             {
                 if constexpr (merge == MORPHO_MERGE::ADD || merge == MORPHO_MERGE::AVERAGE)
                 {
-                    morpho_backward_sum_avg<op, merge, padding, T, save_index, false>(
+                    morpho_backward_sum_avg<op, merge, kind, T, save_index, false>(
                         b, o, in_channels, height, width, kernel_height, kernel_width, kernel_height_half, kernel_width_half, input_ptr, weight_ptr,
                         grad_output_ptr, local_grad_input_ptr, local_grad_weight_ptr, input_batch_stride, input_channel_stride, weight_out_stride,
-                        weight_in_stride, grad_output_batch_stride, grad_output_channel_stride);
+                        weight_in_stride, grad_output_batch_stride, grad_output_channel_stride, fill);
                 }
                 else
                 {
-                    morpho_backward_min_max<op, merge, padding, T, save_index, false>(
+                    morpho_backward_min_max<op, merge, kind, T, save_index, false>(
                         b, o, in_channels, height, width, kernel_height, kernel_width, kernel_height_half, kernel_width_half, input_ptr, weight_ptr,
                         grad_output_ptr, local_grad_input_ptr, local_grad_weight_ptr, input_batch_stride, input_channel_stride, weight_out_stride,
-                        weight_in_stride, grad_output_batch_stride, grad_output_channel_stride);
+                        weight_in_stride, grad_output_batch_stride, grad_output_channel_stride, fill);
                 }
             }
         }
@@ -390,22 +367,24 @@ torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, 
 /// @tparam T The data type of the tensor elements.
 /// @tparam op The morphological operation type (e.g., dilation, erosion).
 /// @tparam merge The merge strategy for combining gradients.
+/// @tparam kind Padding family used for out of bounds taps.
 /// @tparam save_index Whether to save the indices of the max values.
 /// @param input The input tensor.
 /// @param weight The weight tensor.
 /// @param grad_output The gradient output tensor.
 /// @param max_indices The indices of the max values.
+/// @param fill Border fill value, see morpho_fill_value. Unused when kind is REPLICATE.
 /// @return The gradient tensors for the input and weight.
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING padding, typename T, bool save_index>
+template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING_KIND kind, typename T, bool save_index>
 torch::autograd::tensor_list morpho_operation_backward_cpu_dispatch(torch::Tensor input, torch::Tensor weight, torch::Tensor grad_output,
-                                                                    torch::Tensor max_indices)
+                                                                    torch::Tensor max_indices, T fill)
 {
     if constexpr (merge == MORPHO_MERGE::IDENTITY)
     {
-        return morpho_operation_backward_identity_cpu<op, padding, T, save_index>(input, weight, grad_output, max_indices);
+        return morpho_operation_backward_identity_cpu<op, kind, T, save_index>(input, weight, grad_output, max_indices, fill);
     }
     else
     {
-        return morpho_operation_backward_cpu<op, merge, padding, T, save_index>(input, weight, grad_output, max_indices);
+        return morpho_operation_backward_cpu<op, merge, kind, T, save_index>(input, weight, grad_output, max_indices, fill);
     }
 }

@@ -2,9 +2,10 @@ from cpp_operation import morpho_erosion
 from morphocore.functional.merge_enum import str_to_merge, str_to_padding
 import torch
 
-def erosion(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum', 
+def erosion(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum',
             padding_mode: str = 'geodesic', save_indices: bool = True,
-            weight_dropout: float = 0.0, training: bool = False) -> torch.Tensor:
+            weight_dropout: float = 0.0, training: bool = False,
+            padding_value: float = 0.0) -> torch.Tensor:
     """
     Apply morphological erosion operation on input tensor.
 
@@ -21,7 +22,13 @@ def erosion(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum',
         'sum', 'max', 'min', 'average' or 'identity'. Default is 'sum'.
     padding_mode : str, optional
         Padding strategy to handle border pixels. Options include:
-        'geodesic' or 'replicate'. Default is 'geodesic'.
+
+        - 'zero': border pixels read as 0.
+        - 'geodesic': border pixels read as +inf, so they never win the minimum.
+        - 'constant': border pixels read as `padding_value`.
+        - 'replicate': border pixels read as the nearest edge pixel.
+
+        Default is 'geodesic'.
     save_indices : bool, optional
         Whether to save the indices of minimum values for gradient computation if the implementation exists for the specific configuration.
         Disabling it may reduce memory usage.
@@ -34,6 +41,9 @@ def erosion(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum',
     training : bool, optional
         Whether the model is in training mode. Dropout is only applied when True.
         Default is False.
+    padding_value : float, optional
+        Border value used when padding_mode is 'constant'. Ignored by the other
+        padding modes. Default is 0.0.
 
     Returns
     -------
@@ -58,6 +68,8 @@ def erosion(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum',
     torch.Size([1, 3, 32, 32])
     >>> # With dropout during training
     >>> output = erosion(x, w, weight_dropout=0.2, training=True)
+    >>> # Padding the border with a fixed value
+    >>> output = erosion(x, w, padding_mode='constant', padding_value=1.0)
     """
     # Apply weight dropout if in training mode
     if training and weight_dropout > 0.0:
@@ -70,5 +82,5 @@ def erosion(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum',
         
         w = torch.where(dropout_mask, w, torch.tensor(-float('inf'), device=w.device, dtype=w.dtype))
     
-    return morpho_erosion(x, w.flip((-2, -1)), str_to_merge(channel_merge_mode), 
-                          str_to_padding(padding_mode), save_indices)
+    return morpho_erosion(x, w.flip((-2, -1)), str_to_merge(channel_merge_mode),
+                          str_to_padding(padding_mode), padding_value, save_indices)
