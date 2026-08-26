@@ -27,6 +27,9 @@ class Closing(nn.Module):
     padding_mode : str, optional
         Padding strategy to handle border pixels. Options include:
         'zero', 'geodesic', 'constant' or 'replicate'. Default is 'replicate'.
+    padding_value : float, optional
+        Border value used when padding_mode is 'constant'. Ignored by the other
+        padding modes. Default is 0.0.
     dtype : torch.dtype, optional
         Data type for the weight parameters. Default is torch.float32.
     save_indices : bool, optional
@@ -38,7 +41,8 @@ class Closing(nn.Module):
     dilation : Dilation
         Learnable dilation layer with structuring element of shape (out_channels, in_channels, K_h, K_w).
     erosion : Erosion
-        Learnable erosion layer with structuring element of shape (out_channels, out_channels, K_h, K_w).
+        Learnable erosion layer with structuring element of shape (out_channels, 1, K_h, K_w),
+        one plane per channel because this stage uses identity channel merging.
 
     Notes
     -----
