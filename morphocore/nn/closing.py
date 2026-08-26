@@ -21,6 +21,7 @@ class Closing(nn.Module):
     kernel_size : int or tuple of int
         Size of the structuring element. If int, a square kernel is used.
     channel_merge_mode : str, optional
+        Only meaningful when share_weights is False, where it defaults to 'sum'.
         Strategy for merging multiple input channels in the dilation step. Options include:
         'sum', 'max', 'min', 'average' or 'identity'. Default is 'sum'.
         Note: The erosion step always uses 'identity' mode.
@@ -35,6 +36,12 @@ class Closing(nn.Module):
     save_indices : bool, optional
         Whether to save the indices of extremum values for gradient computation.
         Default is True.
+    share_weights : bool, optional
+        Whether both stages use a single structuring element. Default is True, which
+        is what makes this layer a genuine morphological closing. Requires
+        in_channels == out_channels and forces channel_merge_mode='identity', so that
+        each channel is closined on its own. Set to False for two independent
+        structuring elements, which is more expressive but no longer a closing.
 
     Attributes
     ----------
@@ -46,14 +53,17 @@ class Closing(nn.Module):
 
     Notes
     -----
-    The closing operation is defined as: (x • w) = ((x ⊕ w_d) ⊖ w_e)
-    where ⊕ is dilation and ⊖ is erosion.
-    
-    The erosion step uses 'identity' channel merge mode to ensure each dilated channel
-    is eroded independently, maintaining the morphological property where each dilation
-    is paired with its corresponding erosion.
-    
-    Both structuring elements are trainable and optimized via backpropagation.
+    With share_weights=True (the default) both stages use the same structuring element w,
+    giving the algebraic closing: extensive (φ(x) ≥ x) and idempotent.
+    Both properties hold exactly in the interior; at the border they depend on padding_mode,
+    and only 'geodesic' preserves them everywhere.
+
+    With share_weights=False the two stages learn independent structuring elements w_e and
+    w_d. That is strictly more expressive but neither extensive nor idempotent.
+    Stage order is dilation then erosion; the second stage always merges with
+    'identity' so each channel of the first stage is paired with its own.
+
+    The structuring element(s) are trainable and optimized via backpropagation.
     Supports GPU acceleration via CUDA.
 
     Examples
@@ -84,13 +94,33 @@ class Closing(nn.Module):
     Erosion : Morphological erosion layer
     """
 
-    def __init__(self, in_channels: int, out_channels: int, kernel_size, channel_merge_mode: str = "sum", 
+    def __init__(self, in_channels: int, out_channels: int, kernel_size, channel_merge_mode: str = None,
                  padding_mode: str = "replicate", dtype: torch.dtype = torch.float32, save_indices: bool = True,
-                 padding_value: float = 0.0):
+                 padding_value: float = 0.0, share_weights: bool = True):
         super(Closing, self).__init__()
-        
+
         if type(kernel_size) is int:
             kernel_size = (kernel_size, kernel_size)
+
+        # Sharing one structuring element between the two stages is what makes this an algebraic
+        # closing: anti-extensive (resp. extensive) and idempotent. It only makes sense per channel,
+        # so both stages merge with 'identity' and the two channel counts have to agree.
+        if share_weights:
+            if in_channels != out_channels:
+                raise ValueError(
+                    f"share_weights=True needs in_channels == out_channels, got {in_channels} and "
+                    f"{out_channels}. Pass share_weights=False for two independent structuring elements."
+                )
+            if channel_merge_mode not in (None, 'identity'):
+                raise ValueError(
+                    f"share_weights=True forces channel_merge_mode='identity', got "
+                    f"'{channel_merge_mode}'. Pass share_weights=False to merge channels instead."
+                )
+            channel_merge_mode = 'identity'
+        elif channel_merge_mode is None:
+            channel_merge_mode = 'sum'
+
+        self.share_weights = share_weights
         
         self.dilation = Dilation(
             in_channels=in_channels,
@@ -113,6 +143,10 @@ class Closing(nn.Module):
             dtype=dtype,
             save_indices=save_indices
         )
+
+        if share_weights:
+            # One nn.Parameter behind both stages; torch de-duplicates it in parameters().
+            self.erosion.weight = self.dilation.weight
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
