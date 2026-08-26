@@ -1,5 +1,6 @@
 #include "smorph.cuh"
 #include "smorph_kernels.cuh"
+#include "smorph_forward.cuh"
 #include "smorph_backward.cuh"
 #include "smorph_forward_identity.cuh"
 #include "smorph_backward_identity.cuh"

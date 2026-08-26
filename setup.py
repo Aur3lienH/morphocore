@@ -48,12 +48,12 @@ if with_cuda:
     sources = cpp_sources + cuda_sources
     define_macros = [('WITH_CUDA', '1')]
     
-    extra_compile_args = {
-        'cxx': cxx_flags,
-        'nvcc': [
-            '-O3',
-            '--use_fast_math',
-            '-std=c++17',
+    # CUDA 13 dropped Pascal and Volta, so this default list cannot be compiled by nvcc 13+.
+    # Setting TORCH_CUDA_ARCH_LIST (e.g. "8.6") suppresses it and lets torch derive the flags.
+    if os.environ.get('TORCH_CUDA_ARCH_LIST'):
+        arch_flags = []
+    else:
+        arch_flags = [
             '-gencode=arch=compute_61,code=sm_61',     # Pascal: GTX 10XX
             '-gencode=arch=compute_70,code=sm_70',     # Volta: V100
             '-gencode=arch=compute_75,code=sm_75',     # Turing: RTX 20XX
@@ -62,10 +62,18 @@ if with_cuda:
             '-gencode=arch=compute_89,code=sm_89',     # Ada: RTX 40XX
             '-gencode=arch=compute_90,code=sm_90',     # Hopper: H100
             '-gencode=arch=compute_89,code=compute_89', # PTX for RTX 50XX+ forward compat
+        ]
+
+    extra_compile_args = {
+        'cxx': cxx_flags,
+        'nvcc': [
+            '-O3',
+            '--use_fast_math',
+            '-std=c++17',
+        ] + arch_flags + [
             '--maxrregcount=96',
             '-Xcompiler=-O3',
             '-Xcompiler=-fopenmp'
-            
         ]
     }
 else:
