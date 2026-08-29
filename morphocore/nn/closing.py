@@ -36,6 +36,9 @@ class Closing(nn.Module):
     save_indices : bool, optional
         Whether to save the indices of extremum values for gradient computation.
         Default is True.
+    weight_dropout : float, optional
+        Probability of dropping weights in the structuring element during training.
+        Each stage draws its own mask. Must be in range [0, 1). Default is 0.0 (no dropout).
     share_weights : bool, optional
         Whether both stages use a single structuring element. Default is True, which
         is what makes this layer a genuine morphological closing. Requires
@@ -96,7 +99,8 @@ class Closing(nn.Module):
 
     def __init__(self, in_channels: int, out_channels: int, kernel_size, channel_merge_mode: str = None,
                  padding_mode: str = "replicate", dtype: torch.dtype = torch.float32, save_indices: bool = True,
-                 padding_value: float = 0.0, share_weights: bool = True):
+                 padding_value: float = 0.0, share_weights: bool = True,
+                 weight_dropout: float = 0.0):
         super(Closing, self).__init__()
 
         if type(kernel_size) is int:
@@ -129,6 +133,7 @@ class Closing(nn.Module):
             channel_merge_mode=channel_merge_mode,
             padding_mode=padding_mode,
             padding_value=padding_value,
+            weight_dropout=weight_dropout,
             dtype=dtype,
             save_indices=save_indices
         )
@@ -140,6 +145,7 @@ class Closing(nn.Module):
             channel_merge_mode='identity',
             padding_mode=padding_mode,
             padding_value=padding_value,
+            weight_dropout=weight_dropout,
             dtype=dtype,
             save_indices=save_indices
         )

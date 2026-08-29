@@ -4,7 +4,7 @@ from torch.functional import F
 from morphocore.functional import dilation
 from morphocore.functional import erosion
 
-def emorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'geodesic', save_indices: bool = True, padding_value: float = 0.0) -> torch.Tensor:
+def emorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'geodesic', save_indices: bool = True, padding_value: float = 0.0, weight_dropout: float = 0.0, training: bool = False) -> torch.Tensor:
     """
     Apply morphological interpolation between erosion and dilation.
     
@@ -31,6 +31,12 @@ def emorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_
     padding_value : float, optional
         Border value used when padding_mode is 'constant'. Ignored by the other
         padding modes. Default is 0.0.
+    weight_dropout : float, optional
+        Probability of dropping weights in the structuring element during training.
+        Each stage draws its own mask. Must be in range [0, 1). Default is 0.0 (no dropout).
+    training : bool, optional
+        Whether the model is in training mode. Dropout is only applied when True.
+        Default is False.
     save_indices : bool, optional
         Whether to save the indices of extremum values for gradient computation if the implementation exists for the specific configuration.
         Disabling it may reduce memory usage.
@@ -60,8 +66,12 @@ def emorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_
     >>> output.shape
     torch.Size([1, 3, 32, 32])
     """
-    out_erosion = erosion(x, w, channel_merge_mode=channel_merge_mode, padding_mode=padding_mode, save_indices=save_indices, padding_value=padding_value)
-    out_dilation = dilation(x, w, channel_merge_mode=channel_merge_mode, padding_mode=padding_mode, save_indices=save_indices, padding_value=padding_value)
+    out_erosion = erosion(x, w, channel_merge_mode=channel_merge_mode, padding_mode=padding_mode,
+                          save_indices=save_indices, padding_value=padding_value,
+                          weight_dropout=weight_dropout, training=training)
+    out_dilation = dilation(x, w, channel_merge_mode=channel_merge_mode, padding_mode=padding_mode,
+                            save_indices=save_indices, padding_value=padding_value,
+                            weight_dropout=weight_dropout, training=training)
 
     soft = torch.sigmoid(alpha.mean(dim=1))  # (C_out,)
     soft = soft.view(1, -1, 1, 1)  # (1, C_out, 1, 1)

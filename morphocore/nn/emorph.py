@@ -29,6 +29,9 @@ class EMorph(AlphaModule):
         Initial value for the alpha parameter. Default is 0.0.
     dtype : torch.dtype, optional
         Data type for the weight and alpha parameters. Default is torch.float32.
+    weight_dropout : float, optional
+        Probability of dropping weights in the structuring element during training.
+        Each stage draws its own mask. Must be in range [0, 1). Default is 0.0 (no dropout).
     save_indices : bool, optional
         Whether to save the indices of extremum values for gradient computation.
         Default is True.
@@ -82,13 +85,16 @@ class EMorph(AlphaModule):
     Erosion : Standard erosion layer
     """
 
-    def __init__(self, in_channels : int, out_channels : int, kernel_size : tuple, channel_merge_mode: str = "sum", padding_mode: str = "geodesic", init_alpha: float = 0.0, dtype: torch.dtype = torch.float32, save_indices: bool = True, padding_value: float = 0.0):
+    def __init__(self, in_channels : int, out_channels : int, kernel_size : tuple, channel_merge_mode: str = "sum", padding_mode: str = "geodesic", init_alpha: float = 0.0, dtype: torch.dtype = torch.float32, save_indices: bool = True, padding_value: float = 0.0, weight_dropout: float = 0.0):
         if type(kernel_size) is int:
             kernel_size = (kernel_size, kernel_size)
         super().__init__(in_channels, out_channels, kernel_size, channel_merge_mode, init_alpha, dtype=dtype)
         self.save_indices = save_indices
         self.padding_mode = padding_mode
         self.padding_value = padding_value
+        self.weight_dropout = weight_dropout
 
     def forward(self, x):
-        return emorph(x, self.weight, self.alpha, self.channel_merge_mode, padding_mode=self.padding_mode, save_indices=self.save_indices, padding_value=self.padding_value)
+        return emorph(x, self.weight, self.alpha, self.channel_merge_mode, padding_mode=self.padding_mode,
+                      save_indices=self.save_indices, padding_value=self.padding_value,
+                      weight_dropout=self.weight_dropout, training=self.training)

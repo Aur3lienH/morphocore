@@ -2,7 +2,8 @@ import torch
 from morphocore.functional import dilation, erosion
 
 
-def opening(x: torch.Tensor, w_erosion: torch.Tensor, w_dilation: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'geodesic', save_indices: bool = True, padding_value: float = 0.0) -> torch.Tensor:
+def opening(x: torch.Tensor, w_erosion: torch.Tensor, w_dilation: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'geodesic', save_indices: bool = True, padding_value: float = 0.0,
+            weight_dropout: float = 0.0, training: bool = False) -> torch.Tensor:
     """
     Apply morphological opening operation (erosion followed by dilation).
 
@@ -28,6 +29,12 @@ def opening(x: torch.Tensor, w_erosion: torch.Tensor, w_dilation: torch.Tensor, 
     padding_value : float, optional
         Border value used when padding_mode is 'constant'. Ignored by the other
         padding modes. Default is 0.0.
+    weight_dropout : float, optional
+        Probability of dropping weights in the structuring element during training.
+        Each stage draws its own mask. Must be in range [0, 1). Default is 0.0 (no dropout).
+    training : bool, optional
+        Whether the model is in training mode. Dropout is only applied when True.
+        Default is False.
     save_indices : bool, optional
         Whether to save the indices of extremum values for gradient computation.
         Disabling it may reduce memory usage.
@@ -82,5 +89,7 @@ def opening(x: torch.Tensor, w_erosion: torch.Tensor, w_dilation: torch.Tensor, 
     dilation : Morphological dilation operation
     erosion : Morphological erosion operation
     """
-    eroded = erosion(x, w_erosion, channel_merge_mode, padding_mode, save_indices, padding_value=padding_value)
-    return dilation(eroded, w_dilation, 'identity', padding_mode, save_indices, padding_value=padding_value)
+    eroded = erosion(x, w_erosion, channel_merge_mode, padding_mode, save_indices,
+                     weight_dropout=weight_dropout, training=training, padding_value=padding_value)
+    return dilation(eroded, w_dilation, 'identity', padding_mode, save_indices,
+                    weight_dropout=weight_dropout, training=training, padding_value=padding_value)
