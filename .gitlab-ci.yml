@@ -61,28 +61,18 @@ build:
   rules:
     - if: $CI_COMMIT_TAG  
 
+# Uses an API token rather than PyPI trusted publishing. Trusted publishing needs PyPI to trust
+# this instance's OIDC issuer (https://gitlab.lre.epita.fr), and self-managed GitLab instances are
+# still a manually onboarded beta: it requires a PyPI Organization and a request to
+# support+orgs@pypi.org. A publisher registered for gitlab.com does not apply here, the issuer
+# differs. Revisit once the instance is onboarded.
 deploy-pypi:
   stage: deploy
   image: python:3.11
-  # Trusted publishing: PyPI mints a short lived token from this pipeline's OIDC identity,
-  # so no long lived API token has to be stored as a CI variable.
-  id_tokens:
-    PYPI_ID_TOKEN:
-      aud: pypi
   before_script:
-    - apt-get update && apt-get install -y jq
     - pip install twine
   script:
-    - |
-      resp=$(curl -sS -X POST https://pypi.org/_/oidc/mint-token \
-        -d "{\"token\":\"${PYPI_ID_TOKEN}\"}")
-      api_token=$(printf '%s' "${resp}" | jq -er '.token') || {
-        echo "PyPI refused to mint a token. Check the trusted publisher on pypi.org matches"
-        echo "this project, .gitlab-ci.yml as top-level pipeline, and the environment."
-        echo "${resp}"
-        exit 1
-      }
-      TWINE_USERNAME=__token__ TWINE_PASSWORD="${api_token}" twine upload wheelhouse/*
+    - twine upload wheelhouse/* --username __token__ --password $PYPI_TOKEN
   rules:
     - if: $CI_COMMIT_TAG
   dependencies:
