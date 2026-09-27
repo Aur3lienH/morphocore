@@ -57,14 +57,13 @@ if with_cuda:
     sources = cpp_sources + cuda_sources
     define_macros = [('WITH_CUDA', '1')]
     
-    # CUDA 13 dropped Pascal and Volta, so this default list cannot be compiled by nvcc 13+.
-    # Setting TORCH_CUDA_ARCH_LIST (e.g. "8.6") suppresses it and lets torch derive the flags.
+    # Turing and newer: Pascal and Volta are no longer built (CUDA 13 dropped them too), which also
+    # shortens every wheel build. Setting TORCH_CUDA_ARCH_LIST (e.g. "8.6") replaces this list and
+    # lets torch derive the flags.
     if os.environ.get('TORCH_CUDA_ARCH_LIST'):
         arch_flags = []
     else:
         arch_flags = [
-            '-gencode=arch=compute_61,code=sm_61',     # Pascal: GTX 10XX
-            '-gencode=arch=compute_70,code=sm_70',     # Volta: V100
             '-gencode=arch=compute_75,code=sm_75',     # Turing: RTX 20XX
             '-gencode=arch=compute_80,code=sm_80',     # Ampere: A100
             '-gencode=arch=compute_86,code=sm_86',     # Ampere: RTX 30XX

@@ -17,7 +17,7 @@ Requirements
 
 For pre-compiled packages from PyPI:
 
-* Python >= 3.10
+* Python >= 3.11
 * PyTorch >= 2.6
 * CUDA >= 12.3 (for GPU support)
 
@@ -34,7 +34,7 @@ Prerequisites
 ^^^^^^^^^^^^^
 
 * Git
-* Python >= 3.10
+* Python >= 3.11
 * PyTorch >= 2.0
 * CUDA Toolkit (for GPU support, optional)
 * C++ compiler (GCC >= 7.0 or equivalent)

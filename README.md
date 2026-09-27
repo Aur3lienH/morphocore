@@ -47,7 +47,7 @@ pip install . --no-build-isolation
 
 If you install from PyPI using `pip install morphocore`, you'll need:
 
-- Python >= 3.10
+- Python >= 3.11
 - PyTorch >= 2.6
 - CUDA >= 12.3
 
