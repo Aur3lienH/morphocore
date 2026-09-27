@@ -18,9 +18,13 @@ test:
     - apt-get update && apt-get install -y python3 python3-pip python3-venv
     - python3 -m venv .venv
     - source .venv/bin/activate
-    - pip install --upgrade pip
-    - pip install pytest torch numpy pytest-benchmark
-    - MORPHO_WITH_CUDA=0 pip install -e .  
+    - pip install --upgrade pip setuptools wheel
+    # Pinned to the newest torch of the release matrix: newer torch headers need a newer GCC than
+    # Ubuntu 22.04's. The tests only run on CPU, so the CPU wheels skip the CUDA libraries.
+    - pip install "torch==2.9.*" --index-url https://download.pytorch.org/whl/cpu
+    - pip install pytest numpy pytest-benchmark
+    # Build against the torch installed above instead of the latest one an isolated build pulls.
+    - MORPHO_WITH_CUDA=0 pip install -e . --no-build-isolation
   script:
     - pytest tests/ -v -k "cpu" --junitxml=junit.xml  
     - python -c "import morphocore; print('Import successful')"  
