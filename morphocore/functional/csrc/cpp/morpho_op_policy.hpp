@@ -1,6 +1,7 @@
 #pragma once
 #include <limits>
 
+#include "morpho_cpu_simd.hpp"
 #include "morpho_op_enum.hpp"
 
 /// @brief Policy for morphological operations to differentiate between erosion and dilation.
@@ -33,7 +34,9 @@ struct MorphoPolicyCPU
         }
     }
 
-    static T combine(T input_val, T weight_val)
+    /// @note Generic so that the SIMD kernels use it on whole vectors: V is T or a MorphoSimd vector.
+    template <typename V>
+    static MORPHO_INLINE V combine(V input_val, T weight_val)
     {
         if constexpr (op == MORPHO_OPERATION::DILATION)
         {
@@ -45,7 +48,9 @@ struct MorphoPolicyCPU
         }
     }
 
-    static bool is_better(T val, T best)
+    /// @return A bool for scalars, a lane mask for MorphoSimd vectors.
+    template <typename V>
+    static MORPHO_INLINE auto is_better(V val, V best)
     {
         if constexpr (op == MORPHO_OPERATION::DILATION)
         {

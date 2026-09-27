@@ -19,11 +19,20 @@ cuda_sources = [os.path.join(path_to_cuda, file) for file in cuda_files]
 # Détection automatique de CUDA
 with_cuda = os.environ.get('MORPHO_WITH_CUDA', '1') == '1'
 
+# CPU kernels notes:
+# - Threads come from PyTorch's pool through at::parallel_for. With PyTorch's OpenMP backend that
+#   template expands to `#pragma omp parallel` inside this library, so -fopenmp is required: without
+#   it every kernel silently runs on a single thread.
+# - No -march: the kernels are compiled for baseline x86-64 and for AVX2, and the AVX2 version is
+#   picked at runtime (see morpho_cpu_simd.hpp), so one wheel is portable and fast.
+# - -Wno-psabi silences a note about passing AVX vectors by value, which never happens across a call:
+#   every function taking vectors is always inlined.
+# - -g0 overrides the -g of the Python build flags: debug info made the library 7x larger.
 if sys.platform.startswith('linux'):
-    cxx_flags = ['-O3', '-DNDEBUG', '-std=c++17', '-fopenmp', '-Wno-unused-variable']
+    cxx_flags = ['-O3', '-DNDEBUG', '-std=c++17', '-fopenmp', '-Wno-unused-variable', '-Wno-psabi', '-g0']
     link_args = ['-fopenmp']
 elif sys.platform.startswith('darwin'):
-    cxx_flags = ['-O3', '-DNDEBUG', '-std=c++17']
+    cxx_flags = ['-O3', '-DNDEBUG', '-std=c++17', '-Wno-psabi']
     link_args = ['-lomp']
 elif sys.platform.startswith('win'):
     cxx_flags = ['/O2', '/DNDEBUG', '/std:c++17', '/openmp']

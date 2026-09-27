@@ -5,15 +5,15 @@
 #include "morpho_op_enum.hpp"
 #include "morpho_op_policy.hpp"
 
-// Every border rule of the library lives in this header. A new padding mode needs a value in
+// Every border rule of the CPU path lives in this header. A new padding mode needs a value in
 // MORPHO_PADDING plus either one case in morpho_fill_value (value based mode) or one branch in
-// morpho_row / morpho_load_row (structural mode); nothing else in the CPU kernels has to change.
+// morpho_pad_rows (structural mode); nothing else in the CPU kernels has to change.
 //
-// Resolution is split in two so the kernels keep the per row work out of their innermost loop:
-// morpho_row is called once per kernel row, morpho_load_row once per tap.
+// The kernels never test bounds: each work unit copies the input rows it reads into a small padded
+// tile, so that every tap reads plain memory and the inner loops vectorise. The copy costs
+// O(H * W) against the O(H * W * K^2) of the operation itself.
 
 /// @brief Resolve the value an out of bounds tap reads for a given padding mode.
-/// Called once per operation and hoisted out of the kernel loops, so the switch is free.
 /// @tparam op Morphological operation type, only used to pick the geodesic neutral element.
 /// @tparam T Data type of tensor elements.
 /// @param padding Padding mode requested by the caller.
@@ -32,42 +32,43 @@ inline T morpho_fill_value(MORPHO_PADDING padding, double constant_value)
     }
 }
 
-/// @brief Resolve the source row a tap row reads from, once per kernel row.
+/// @brief Copy rows of one [height, width] plane into a padded buffer.
 /// @tparam kind Padding family.
 /// @tparam T Data type of tensor elements.
-/// @param plane Base pointer of the [height, width] channel plane.
-/// @return Pointer to the source row, or nullptr when the whole row is padding (FILL only).
-/// @note The bounds test casts to unsigned so a negative coordinate wraps to a huge value and fails
-///       the upper bound check: one comparison instead of two.
-template <MORPHO_PADDING_KIND kind, typename T>
-inline const T* morpho_row(const T* __restrict__ plane, int64_t ph, int64_t height, int64_t width)
-{
-    if constexpr (kind == MORPHO_PADDING_KIND::REPLICATE)
-    {
-        return plane + std::min(std::max(ph, int64_t(0)), height - 1) * width;
-    }
-    else
-    {
-        return static_cast<uint64_t>(ph) < static_cast<uint64_t>(height) ? plane + ph * width : nullptr;
-    }
-}
-
-/// @brief Read one tap from a row already resolved by morpho_row.
-/// @tparam kind Padding family.
-/// @tparam T Data type of tensor elements.
-/// @param row Row pointer from morpho_row; nullptr means the row lies entirely in the padding.
+/// @param plane Source plane.
+/// @param pad_h Rows added on the top and on the bottom of the plane.
+/// @param pad_w Columns added on the left and on the right of each row.
+/// @param row_begin First padded row to produce; padded row r holds input row r - pad_h.
+/// @param rows Number of padded rows to produce.
 /// @param fill Fill value from morpho_fill_value, unused when kind is REPLICATE.
-/// @note REPLICATE clamps with std::min/std::max, which lower to branchless cmov; the row is never
-///       null so nothing else is tested. For FILL the null test is loop invariant and hoists out.
+/// @param dst Destination, rows * (width + 2 * pad_w) values.
 template <MORPHO_PADDING_KIND kind, typename T>
-inline T morpho_load_row(const T* __restrict__ row, int64_t pw, int64_t width, T fill)
+void morpho_pad_rows(const T* __restrict__ plane, int64_t height, int64_t width, int64_t pad_h, int64_t pad_w, int64_t row_begin, int64_t rows,
+                     T fill, T* __restrict__ dst)
 {
-    if constexpr (kind == MORPHO_PADDING_KIND::REPLICATE)
+    const int64_t padded_width = width + 2 * pad_w;
+    for (int64_t r = 0; r < rows; r++)
     {
-        return row[std::min(std::max(pw, int64_t(0)), width - 1)];
-    }
-    else
-    {
-        return (row != nullptr && static_cast<uint64_t>(pw) < static_cast<uint64_t>(width)) ? row[pw] : fill;
+        const int64_t y = row_begin + r - pad_h;
+        T* out = dst + r * padded_width;
+
+        if constexpr (kind == MORPHO_PADDING_KIND::REPLICATE)
+        {
+            const T* row = plane + std::clamp<int64_t>(y, 0, height - 1) * width;
+            std::fill(out, out + pad_w, row[0]);
+            std::copy(row, row + width, out + pad_w);
+            std::fill(out + pad_w + width, out + padded_width, row[width - 1]);
+        }
+        else if (y < 0 || y >= height)
+        {
+            std::fill(out, out + padded_width, fill);
+        }
+        else
+        {
+            const T* row = plane + y * width;
+            std::fill(out, out + pad_w, fill);
+            std::copy(row, row + width, out + pad_w);
+            std::fill(out + pad_w + width, out + padded_width, fill);
+        }
     }
 }

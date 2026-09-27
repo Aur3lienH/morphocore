@@ -3,8 +3,6 @@
 #include "../cpp/morpho_op_enum.hpp"
 #include <torch/torch.h>
 #include "reshaper.hpp"
-#include "smorph_cpu_forward_identity.hxx"
-#include "smorph_cpu_backward_identity.hxx"
 
 #ifdef WITH_CUDA
     #include <cuda_runtime.h>
@@ -27,8 +25,8 @@ torch::Tensor Smorph<merge>::forward(torch::autograd::AutogradContext* ctx, torc
     TensorWeightDim weight_dim_manager(weight);
     torch::Tensor input_correct_dims = input_dim_manager.To4DTensor(input);
     torch::Tensor weight_correct_dims = weight_dim_manager.To4DTensor(weight);
-    auto input_shape = input_correct_dims.sizes();
-    auto weight_shape = weight_correct_dims.sizes();
+    [[maybe_unused]] auto input_shape = input_correct_dims.sizes();
+    [[maybe_unused]] auto weight_shape = weight_correct_dims.sizes();
 
     TORCH_CHECK(input_correct_dims.dim() == 4, "Input must be a 4d tensor (batch_size, in_channels, height, width)");
     TORCH_CHECK(weight_correct_dims.dim() == 4, "Weight must be a 4d tensor (out_channels, in_channels, kernel_height, kernel_width)");
@@ -65,21 +63,12 @@ torch::Tensor Smorph<merge>::forward(torch::autograd::AutogradContext* ctx, torc
     }
     else
     {
-        torch::Tensor output = torch::zeros({input_shape[0], weight_shape[0], input_shape[2], input_shape[3]}, input.options());
-        torch::Tensor reference_values = torch::zeros({input_shape[0], weight_shape[0], input_shape[2], input_shape[3]}, input.options());
-        torch::Tensor max_values = torch::zeros({input_shape[0], weight_shape[0], input_shape[2], input_shape[3]}, input.options());
-        AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), "smorph_forward_cpu", [&] {
-            if (merge == MORPHO_MERGE::IDENTITY)
-            {
-                output = smorph_forward_cpu_identity<scalar_t>(input_correct_dims, weight_correct_dims, alpha);
-            }
-            else
-            {
-                output = smorph_forward_cpu<merge, scalar_t>(input_correct_dims, weight_correct_dims, alpha);
-            }
-        });
+        torch::Tensor output;
+        AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), "smorph_forward_cpu",
+                                   [&] { output = smorph_forward_cpu<merge, scalar_t>(input_correct_dims, weight_correct_dims, alpha); });
         output = input_dim_manager.ToOriginalTensor(output);
-        ctx->save_for_backward({output, reference_values, max_values, alpha, input_correct_dims, weight_correct_dims});
+        // The CPU backward recomputes everything from the input: the two intermediate slots stay empty.
+        ctx->save_for_backward({output, torch::Tensor(), torch::Tensor(), alpha, input_correct_dims, weight_correct_dims});
         return output;
     }
     return torch::Tensor();
@@ -146,14 +135,7 @@ torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradCo
     else
     {
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_backward_cpu", [&] {
-            if (merge == MORPHO_MERGE::IDENTITY)
-            {
-                smorph_backward_cpu_identity<scalar_t>(input, weight, alpha, grad_outputs[0], grad_input, grad_weight, grad_alpha);
-            }
-            else
-            {
-                smorph_backward_cpu<merge, scalar_t>(input, weight, alpha, grad_outputs[0], grad_input, grad_weight, grad_alpha);
-            }
+            smorph_backward_cpu<merge, scalar_t>(input, weight, alpha, grad_outputs[0], grad_input, grad_weight, grad_alpha);
         });
         return {grad_input, grad_weight, grad_alpha};
     }
@@ -165,44 +147,3 @@ template class Smorph<MORPHO_MERGE::MAX>;
 template class Smorph<MORPHO_MERGE::AVERAGE>;
 template class Smorph<MORPHO_MERGE::ADD>;
 template class Smorph<MORPHO_MERGE::IDENTITY>;
-
-// ----------------------------------SMORPH FORWARD PASS CPU----------------------------------------
-
-#define INSTANTIATE_SMORPH_FORWARD(MERGE, TYPE)                                                                                                      \
-    template auto smorph_forward_cpu<MORPHO_MERGE::MERGE, TYPE>(torch::Tensor, torch::Tensor, torch::Tensor);
-
-INSTANTIATE_SMORPH_FORWARD(MIN, float)
-INSTANTIATE_SMORPH_FORWARD(MAX, float)
-INSTANTIATE_SMORPH_FORWARD(AVERAGE, float)
-INSTANTIATE_SMORPH_FORWARD(ADD, float)
-INSTANTIATE_SMORPH_FORWARD(MIN, double)
-INSTANTIATE_SMORPH_FORWARD(MAX, double)
-INSTANTIATE_SMORPH_FORWARD(AVERAGE, double)
-INSTANTIATE_SMORPH_FORWARD(ADD, double)
-
-template torch::Tensor smorph_forward_cpu_identity<float>(torch::Tensor, torch::Tensor, torch::Tensor);
-template torch::Tensor smorph_forward_cpu_identity<double>(torch::Tensor, torch::Tensor, torch::Tensor);
-
-// ----------------------------------SMORPH FORWARD PASS CPU----------------------------------------
-
-// ----------------------------------SMORPH BACKWARD PASS CPU----------------------------------------
-
-#define INSTANTIATE_SMORPH_BACKWARD(MERGE, TYPE)                                                                                                     \
-    template void smorph_backward_cpu<MORPHO_MERGE::MERGE, TYPE>(torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor,          \
-                                                                 torch::Tensor, torch::Tensor);
-
-INSTANTIATE_SMORPH_BACKWARD(MIN, float)
-INSTANTIATE_SMORPH_BACKWARD(MAX, float)
-INSTANTIATE_SMORPH_BACKWARD(AVERAGE, float)
-INSTANTIATE_SMORPH_BACKWARD(ADD, float)
-INSTANTIATE_SMORPH_BACKWARD(MIN, double)
-INSTANTIATE_SMORPH_BACKWARD(MAX, double)
-INSTANTIATE_SMORPH_BACKWARD(AVERAGE, double)
-INSTANTIATE_SMORPH_BACKWARD(ADD, double)
-
-template void smorph_backward_cpu_identity<float>(torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor,
-                                                  torch::Tensor);
-template void smorph_backward_cpu_identity<double>(torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor,
-                                                   torch::Tensor);
-
-// ----------------------------------SMORPH BACKWARD PASS CPU----------------------------------------

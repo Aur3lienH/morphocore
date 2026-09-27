@@ -71,7 +71,9 @@ This will compile only the CPU version, which:
 
 * Doesn't require CUDA Toolkit installation
 * Works on machines without NVIDIA GPUs
-* Uses CPU parallelization with OpenMP
+* Runs on PyTorch's CPU thread pool (set the thread count with ``torch.set_num_threads``)
+* Uses AVX2 automatically when the processor supports it, and baseline x86-64 code otherwise;
+  set ``MORPHOCORE_DISABLE_AVX2=1`` to force the baseline code
 * Is faster to compile
 
 .. note::

@@ -30,31 +30,11 @@ public:
     }
 };
 
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING_KIND kind, typename T, bool save_index>
-auto morpho_operation_forward_cpu(torch::Tensor input, torch::Tensor weight, T fill);
-
-// Not wired up yet, see morpho_op_specialized.hxx; it has no padding support.
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, typename T, bool save_index, int KERNEL_SIZE>
-auto morpho_operation_forward_cpu_template(torch::Tensor input, torch::Tensor weight);
-
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING_KIND kind, typename T, bool save_index>
-torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, torch::Tensor weight, torch::Tensor grad_output,
-                                                           torch::Tensor max_indices, T fill);
-
-template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING_KIND kind, typename T, bool save_index>
-auto morpho_operation_forward_cpu_dispatcher(torch::Tensor input, torch::Tensor weight, T fill);
-
-template <MORPHO_OPERATION op, MORPHO_PADDING_KIND kind, typename T, bool save_index>
-auto morpho_operation_forward_identity_cpu(torch::Tensor input, torch::Tensor weight, T fill);
-
-template <MORPHO_OPERATION op, MORPHO_PADDING_KIND kind, typename T, bool save_index>
-torch::autograd::tensor_list morpho_operation_backward_identity_cpu(torch::Tensor input, torch::Tensor weight, torch::Tensor grad_output,
-                                                                    torch::Tensor max_indices, T fill);
-
-#include "morpho_padding_policy.hpp"
-#include "morpho_op_cpu_forward.hxx"
-#include "morpho_op_cpu_backward.hxx"
-#include "morpho_op_cpu_forward_linear.hxx"
-#include "morpho_op_cpu_backward_linear.hxx"
-#include "morpho_op_specialized.hxx"
-#include "morpho_op_wrap.hxx"
+// The CUDA sources only need the declarations above. The CPU kernels use GCC vector extensions that
+// the nvcc front end cannot parse, and the dispatching wrapper is compiled in morpho_op.cpp.
+#ifndef __CUDACC__
+    #include "morpho_padding_policy.hpp"
+    #include "morpho_op_cpu_forward.hxx"
+    #include "morpho_op_cpu_backward.hxx"
+    #include "morpho_op_wrap.hxx"
+#endif

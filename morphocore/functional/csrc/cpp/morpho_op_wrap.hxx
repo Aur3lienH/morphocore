@@ -207,19 +207,19 @@ torch::Tensor MorphoOperation<Op, merge, kind>::forward(torch::autograd::Autogra
 
         AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), cpu_operation_name, [&] {
             const scalar_t fill = morpho_fill_value<Op, scalar_t>(padding, padding_value);
+            constexpr bool merge_supports_indices = (merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN);
 
-            if (should_save_indices)
+            if constexpr (merge_supports_indices)
             {
-                auto result =
-                    morpho_operation_forward_cpu_dispatcher<Op, merge, kind, scalar_t, true>(input_correct_dims, weight_correct_dims, fill);
-                output = std::get<0>(result);
-                max_indices = std::get<1>(result);
+                if (should_save_indices)
+                {
+                    std::tie(output, max_indices) =
+                        morpho_operation_forward_cpu<Op, merge, kind, scalar_t, true>(input_correct_dims, weight_correct_dims, fill);
+                    return;
+                }
             }
-            else
-            {
-                output = morpho_operation_forward_cpu_dispatcher<Op, merge, kind, scalar_t, false>(input_correct_dims, weight_correct_dims, fill);
-                max_indices = torch::empty({0}, torch::kLong);
-            }
+            output = std::get<0>(morpho_operation_forward_cpu<Op, merge, kind, scalar_t, false>(input_correct_dims, weight_correct_dims, fill));
+            max_indices = torch::empty({0}, torch::kInt);
         });
     }
 
@@ -346,15 +346,17 @@ torch::autograd::tensor_list MorphoOperation<Op, merge, kind>::backward(torch::a
         torch::autograd::tensor_list result;
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), cpu_operation_name, [&] {
             const scalar_t fill = morpho_fill_value<Op, scalar_t>(padding, padding_value);
+            constexpr bool merge_supports_indices = (merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN);
 
-            if (indices_were_saved)
+            if constexpr (merge_supports_indices)
             {
-                result = morpho_operation_backward_cpu_dispatch<Op, merge, kind, scalar_t, true>(input, weight, grad_output, max_indices, fill);
+                if (indices_were_saved)
+                {
+                    result = morpho_operation_backward_cpu<Op, merge, kind, scalar_t, true>(input, weight, grad_output, max_indices, fill);
+                    return;
+                }
             }
-            else
-            {
-                result = morpho_operation_backward_cpu_dispatch<Op, merge, kind, scalar_t, false>(input, weight, grad_output, max_indices, fill);
-            }
+            result = morpho_operation_backward_cpu<Op, merge, kind, scalar_t, false>(input, weight, grad_output, max_indices, fill);
         });
 
         grad_input = result[0];
