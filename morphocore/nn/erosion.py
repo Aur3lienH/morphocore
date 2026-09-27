@@ -19,7 +19,7 @@ class Erosion(MorphoModule):
         'sum', 'max', 'min', 'average' or 'identity'. Default is 'sum'.
     padding_mode : str, optional
         Padding strategy to handle border pixels. Options include:
-        'zero', 'geodesic', 'constant' or 'replicate'. Default is 'geodesic'.
+        'zero', 'geodesic', 'constant' or 'replicate'. Default is 'replicate'.
     dtype : torch.dtype, optional
         Data type for the weight parameter. Default is torch.float32.
     save_indices : bool, optional
@@ -80,7 +80,7 @@ class Erosion(MorphoModule):
     Dilation : Morphological dilation layer
     """
     def __init__(self, in_channels: int, out_channels: int, kernel_size: tuple,
-                 channel_merge_mode: str = "sum", padding_mode: str = "geodesic",
+                 channel_merge_mode: str = "sum", padding_mode: str = "replicate",
                  dtype: torch.dtype = torch.float32, save_indices: bool = True,
                  weight_dropout: float = 0.0, padding_value: float = 0.0):
         if type(kernel_size) is int:

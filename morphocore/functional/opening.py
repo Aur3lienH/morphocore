@@ -2,7 +2,7 @@ import torch
 from morphocore.functional import dilation, erosion
 
 
-def opening(x: torch.Tensor, w_erosion: torch.Tensor, w_dilation: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'geodesic', save_indices: bool = True, padding_value: float = 0.0,
+def opening(x: torch.Tensor, w_erosion: torch.Tensor, w_dilation: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'replicate', save_indices: bool = True, padding_value: float = 0.0,
             weight_dropout: float = 0.0, training: bool = False) -> torch.Tensor:
     """
     Apply morphological opening operation (erosion followed by dilation).
@@ -25,7 +25,7 @@ def opening(x: torch.Tensor, w_erosion: torch.Tensor, w_dilation: torch.Tensor, 
         Note: The dilation step always uses 'identity' mode.
     padding_mode : str, optional
         Padding strategy to handle border pixels. Options include:
-        'zero', 'geodesic', 'constant' or 'replicate'. Default is 'geodesic'.
+        'zero', 'geodesic', 'constant' or 'replicate'. Default is 'replicate'.
     padding_value : float, optional
         Border value used when padding_mode is 'constant'. Ignored by the other
         padding modes. Default is 0.0.

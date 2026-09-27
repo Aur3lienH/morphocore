@@ -4,7 +4,7 @@ from torch.functional import F
 from morphocore.functional import dilation
 from morphocore.functional import erosion
 
-def emorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'geodesic', save_indices: bool = True, padding_value: float = 0.0, weight_dropout: float = 0.0, training: bool = False) -> torch.Tensor:
+def emorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'replicate', save_indices: bool = True, padding_value: float = 0.0, weight_dropout: float = 0.0, training: bool = False) -> torch.Tensor:
     """
     Apply morphological interpolation between erosion and dilation.
     
@@ -27,7 +27,7 @@ def emorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_
         'sum', 'max', 'min', 'average' or 'identity'. Default is 'sum'.
     padding_mode : str, optional
         Padding strategy to handle border pixels. Options include:
-        'zero', 'geodesic', 'constant' or 'replicate'. Default is 'geodesic'.
+        'zero', 'geodesic', 'constant' or 'replicate'. Default is 'replicate'.
     padding_value : float, optional
         Border value used when padding_mode is 'constant'. Ignored by the other
         padding modes. Default is 0.0.

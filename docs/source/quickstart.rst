@@ -194,8 +194,8 @@ Different padding strategies for border handling:
 
 .. code-block:: python
 
-   # Geodesic padding (default): morphologically-aware padding
+   # Geodesic padding: morphologically-aware padding
    layer_geo = Dilation(3, 16, 5, padding_mode='geodesic')
    
-   # Replicate padding: replicate border values
+   # Replicate padding (default): replicate border values
    layer_rep = Dilation(3, 16, 5, padding_mode='replicate')

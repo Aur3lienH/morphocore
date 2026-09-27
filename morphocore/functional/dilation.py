@@ -3,7 +3,7 @@ from cpp_operation import morpho_dilation
 from morphocore.functional.merge_enum import str_to_merge, str_to_padding
 
 def dilation(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum',
-             padding_mode: str = 'geodesic', save_indices: bool = True,
+             padding_mode: str = 'replicate', save_indices: bool = True,
              weight_dropout: float = 0.0, training: bool = False,
              padding_value: float = 0.0) -> torch.Tensor:
     """
@@ -28,7 +28,7 @@ def dilation(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum',
         - 'constant': border pixels read as `padding_value`.
         - 'replicate': border pixels read as the nearest edge pixel.
 
-        Default is 'geodesic'.
+        Default is 'replicate'.
     save_indices : bool, optional
         Whether to save the indices of maximum values for gradient computation if the implementation exists for the specific configuration.
         Disabling it may reduce memory usage.
