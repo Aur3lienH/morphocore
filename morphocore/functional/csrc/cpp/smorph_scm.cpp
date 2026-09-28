@@ -4,6 +4,12 @@
 #include "reshaper.hpp"
 #include "../cpp/morpho_op_enum.hpp"
 
+#ifdef WITH_CUDA
+    #include <c10/cuda/CUDAGuard.h>
+
+    #include "../cuda/smorph.cuh"
+#endif
+
 torch::Tensor SmorphSCM::forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight, torch::Tensor alpha,
                                  torch::Tensor beta)
 {
@@ -17,7 +23,20 @@ torch::Tensor SmorphSCM::forward(torch::autograd::AutogradContext* ctx, torch::T
     if (input.is_cuda())
     {
 #ifdef WITH_CUDA
-        // TODO: CUDA implementation
+        const c10::cuda::CUDAGuard device_guard(input.device());
+        auto input_contig = input_correct_dims.contiguous();
+        auto weight_contig = weight_correct_dims.contiguous();
+        const auto alpha_pairs = smorph_pair_alphas<MORPHO_MERGE::SMOOTH>(alpha, MorphoGeometryCPU::make<float>(input_contig, weight_contig));
+        const auto beta_contig = beta.contiguous();
+        TORCH_CHECK(beta_contig.numel() == weight_shape[0], "Beta must have shape [out_channels]");
+
+        torch::Tensor output = torch::empty({input_shape[0], weight_shape[0], input_shape[2], input_shape[3]}, input.options());
+        AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "smorph_scm_forward_cuda", [&] {
+            smorph_forward_cuda<scalar_t>(input_contig, weight_contig, alpha_pairs, beta_contig, output, MORPHO_MERGE::SMOOTH);
+        });
+        // The backward pass reads the 4D output: the final value of the soft merge.
+        ctx->save_for_backward({output, torch::Tensor(), torch::Tensor(), alpha, beta_contig, input_contig, weight_contig});
+        return input_dim_manager.ToOriginalTensor(output);
 #endif
     }
     else
@@ -52,7 +71,16 @@ torch::autograd::tensor_list SmorphSCM::backward(torch::autograd::AutogradContex
     if (input.is_cuda())
     {
 #ifdef WITH_CUDA
-        // TODO: CUDA implementation
+        const c10::cuda::CUDAGuard device_guard(input.device());
+        const auto alpha_pairs = smorph_pair_alphas<MORPHO_MERGE::SMOOTH>(alpha, MorphoGeometryCPU::make<float>(input, weight));
+        torch::Tensor grad_alpha_pairs = torch::zeros_like(alpha_pairs);
+        AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "smorph_scm_backward_cuda", [&] {
+            smorph_backward_cuda<scalar_t>(input, weight, alpha_pairs, beta, output, grad_outputs[0].contiguous(), grad_input, grad_weight,
+                                           grad_alpha_pairs, grad_beta, MORPHO_MERGE::SMOOTH);
+        });
+        // A single alpha shared by every pair receives the gradient of all of them.
+        grad_alpha = grad_alpha.numel() == grad_alpha_pairs.numel() ? grad_alpha_pairs.view_as(grad_alpha) : grad_alpha_pairs.sum().view_as(grad_alpha);
+        return {grad_input, grad_weight, grad_alpha, grad_beta};
 #endif
     }
     else
