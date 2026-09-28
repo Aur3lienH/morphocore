@@ -10,3 +10,4 @@ dist/
 wheelhouse/
 .venv/
 .pytest_cache/
+.env
