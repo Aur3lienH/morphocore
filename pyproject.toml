@@ -28,6 +28,7 @@ classifiers = [
     "Environment :: GPU",
     "Environment :: GPU :: NVIDIA CUDA",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
 ]
 
 [project.urls]

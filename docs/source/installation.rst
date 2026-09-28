@@ -17,9 +17,10 @@ Requirements
 
 For pre-compiled packages from PyPI:
 
-* Python >= 3.11
-* PyTorch >= 2.6
-* CUDA >= 12.3 (for GPU support)
+* Python 3.11, 3.12 or 3.13
+* PyTorch 2.6 to 2.14: each package is built for one PyTorch minor version, and pip picks the matching one
+* Linux x86-64: CPU and CUDA (the CUDA version of PyPI's PyTorch)
+* Windows x64: CPU only, like PyPI's PyTorch for Windows
 
 .. note::
    If you encounter compatibility issues with the pre-compiled version, 

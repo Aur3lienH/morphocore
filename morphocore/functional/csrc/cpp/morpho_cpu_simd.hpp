@@ -29,12 +29,37 @@ inline constexpr int MORPHO_SIMD_GENERIC_BYTES = 16;
 /// @brief Vector width of the AVX2 kernels.
 inline constexpr int MORPHO_SIMD_AVX2_BYTES = 32;
 
+#if MORPHO_CPU_HAS_AVX2_PATH && defined(_WIN32)
+#include <intrin.h>
+
+/// @brief CPUID check of AVX2 and FMA, for Windows where clang-cl has no runtime behind
+/// __builtin_cpu_supports. AVX also needs the OS to save the YMM registers (XGETBV bits 1 and 2).
+__attribute__((target("xsave"))) inline bool morpho_cpuid_has_avx2_fma()
+{
+    int regs[4];
+    __cpuid(regs, 0);
+    if (regs[0] < 7)
+        return false;
+    __cpuid(regs, 1);
+    const bool fma = regs[2] & (1 << 12), osxsave = regs[2] & (1 << 27), avx = regs[2] & (1 << 28);
+    if (!fma || !osxsave || !avx || (_xgetbv(0) & 6) != 6)
+        return false;
+    __cpuidex(regs, 7, 0);
+    return regs[1] & (1 << 5);
+}
+#endif
+
 /// @brief Whether the AVX2 kernels can run on this machine.
 /// Setting MORPHOCORE_DISABLE_AVX2=1 forces the generic kernels, to compare both or to work around a problem.
 inline bool morpho_cpu_has_avx2()
 {
 #if MORPHO_CPU_HAS_AVX2_PATH
-    static const bool available = __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma") && std::getenv("MORPHOCORE_DISABLE_AVX2") == nullptr;
+#if defined(_WIN32)
+    const bool supported = morpho_cpuid_has_avx2_fma();
+#else
+    const bool supported = __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
+#endif
+    static const bool available = supported && std::getenv("MORPHOCORE_DISABLE_AVX2") == nullptr;
     return available;
 #else
     return false;

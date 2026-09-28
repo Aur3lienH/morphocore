@@ -52,15 +52,50 @@ build:
   variables:
     DOCKER_DRIVER: overlay2
     DOCKER_TLS_CERTDIR: "/certs"
+  # The builder image (CUDA 12.3, gcc-toolset-12) builds up to torch 2.9. Newer headers need a newer
+  # GCC, and torch >= 2.11 uses CUDA 13, so those use the plain manylinux image (gcc-toolset-14) and
+  # install the CUDA of PyPI's torch at the start (CUDA_VERSION).
   parallel:
     matrix:
       - TORCH_VERSION: ["2.6", "2.7", "2.8", "2.9"]
+      - TORCH_VERSION: "2.10"
+        CUDA_VERSION: "12.8"
+      - TORCH_VERSION: ["2.11", "2.12", "2.13", "2.14"]
+        CUDA_VERSION: "13.0"
   before_script:
     - apt-get update && apt-get install -y docker.io
     - pip install --upgrade pip cibuildwheel
-    - export TORCH_VERSION="${TORCH_VERSION}"
   script:
-    - CIBW_ENVIRONMENT="TORCH_VERSION=${TORCH_VERSION}" cibuildwheel --output-dir wheelhouse --platform linux
+    - |
+      if [ -n "${CUDA_VERSION:-}" ]; then
+        export CIBW_MANYLINUX_X86_64_IMAGE=quay.io/pypa/manylinux_2_28_x86_64
+        export CIBW_BEFORE_ALL_LINUX="bash {project}/ci/install_cuda.sh ${CUDA_VERSION}"
+        export CIBW_ENVIRONMENT="TORCH_VERSION=${TORCH_VERSION} MORPHO_WITH_CUDA=1 CUDA_HOME=/usr/local/cuda-${CUDA_VERSION} PATH=/usr/local/cuda-${CUDA_VERSION}/bin:\$PATH"
+      else
+        export CIBW_ENVIRONMENT="TORCH_VERSION=${TORCH_VERSION}"
+      fi
+    - cibuildwheel --output-dir wheelhouse --platform linux
+  artifacts:
+    paths:
+      - wheelhouse/
+    expire_in: 1 month
+  rules:
+    - if: $CI_COMMIT_TAG
+
+# CPU-only Windows wheels, cross-compiled with clang-cl (see ci/build_windows_wheels.sh): PyPI's torch
+# for Windows is CPU only too. No Windows runner is needed.
+build-windows:
+  stage: build
+  image: python:3.12-trixie
+  cache: []
+  parallel:
+    matrix:
+      - TORCH_VERSION: ["2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14"]
+  before_script:
+    - apt-get update && apt-get install -y clang-19 lld-19 unzip
+    - export PATH=/usr/lib/llvm-19/bin:$PATH
+  script:
+    - bash ci/build_windows_wheels.sh "${TORCH_VERSION}" wheelhouse
   artifacts:
     paths:
       - wheelhouse/
@@ -79,11 +114,13 @@ deploy-pypi:
   before_script:
     - pip install twine
   script:
-    - twine upload wheelhouse/* --username __token__ --password $PYPI_TOKEN
+    # --skip-existing: a re-run or a re-tag of an already published version uploads only the missing files.
+    - twine upload --skip-existing wheelhouse/* --username __token__ --password $PYPI_TOKEN
   rules:
     - if: $CI_COMMIT_TAG
   dependencies:
     - build
+    - build-windows
 
 pages:
   stage: deploy
