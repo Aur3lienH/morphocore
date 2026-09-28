@@ -5,91 +5,9 @@
 #include "morpho_op_enum.hpp"
 #include "reshaper.hpp"
 
-#if WITH_CUDA
-    #include <cuda_runtime.h>
+#ifdef WITH_CUDA
+    #include <c10/cuda/CUDAGuard.h>
 #endif
-
-/// @brief Get the padding value for a given morphological operation and data type.
-/// @tparam Op Morphological operation type (e.g., dilation, erosion).
-/// @param dtype Data type of the tensor elements.
-/// @return Padding value as a scalar.
-template <MORPHO_OPERATION Op>
-torch::Scalar get_padding_value(torch::ScalarType dtype)
-{
-    // Using big value and not infinity to avoid overflow
-    if constexpr (Op == MORPHO_OPERATION::DILATION)
-    {
-        if (dtype == torch::kFloat)
-        {
-            return torch::Scalar(-1e10f);
-        }
-        else if (dtype == torch::kDouble)
-        {
-            return torch::Scalar(-1e10);
-        }
-    }
-    else
-    {
-        if (dtype == torch::kFloat)
-        {
-            return torch::Scalar(1e10f);
-        }
-        else if (dtype == torch::kDouble)
-        {
-            return torch::Scalar(1e10);
-        }
-    }
-
-    TORCH_CHECK(false, "Unsupported dtype for morphological operation");
-    return torch::Scalar(0);
-}
-
-/// @brief Border value the CUDA path materialises around the input, mirroring morpho_fill_value.
-/// @tparam Op Morphological operation, only used to pick the geodesic neutral element.
-/// @param padding Padding mode requested by the caller.
-/// @param constant_value Value used by MORPHO_PADDING::CONSTANT, ignored by the other modes.
-/// @param dtype Data type of the tensor elements.
-template <MORPHO_OPERATION Op>
-torch::Scalar morpho_fill_scalar(MORPHO_PADDING padding, double constant_value, torch::ScalarType dtype)
-{
-    switch (padding)
-    {
-        case MORPHO_PADDING::ZERO: return torch::Scalar(0.0);
-        case MORPHO_PADDING::CONSTANT: return torch::Scalar(constant_value);
-        // GEODESIC, and the value REPLICATE never reads.
-        default: return get_padding_value<Op>(dtype);
-    }
-}
-
-/// @brief Materialise the border so the CUDA kernels can read a plain padded buffer and stay
-///        completely unaware of the padding mode.
-/// @tparam kind Padding family.
-/// @param pad_h Rows added on the top and on the bottom.
-/// @param pad_w Columns added on the left and on the right.
-/// @param fill Fill value from morpho_fill_scalar, unused when kind is REPLICATE.
-template <MORPHO_PADDING_KIND kind>
-torch::Tensor morpho_pad_input(const torch::Tensor& input, int64_t pad_h, int64_t pad_w, const torch::Scalar& fill)
-{
-    if constexpr (kind == MORPHO_PADDING_KIND::REPLICATE)
-    {
-        const int64_t height = input.size(2);
-        const int64_t width = input.size(3);
-
-        // replication_pad2d is a single fused kernel but rejects pads larger than the image, which
-        // happens for structuring elements wider than the input. A clamped gather covers that case.
-        if (pad_h < height && pad_w < width)
-        {
-            return at::replication_pad2d(input, {pad_w, pad_w, pad_h, pad_h});
-        }
-
-        const auto index_options = input.options().dtype(torch::kLong);
-        auto rows = torch::arange(-pad_h, height + pad_h, index_options).clamp_(0, height - 1);
-        auto cols = torch::arange(-pad_w, width + pad_w, index_options).clamp_(0, width - 1);
-        return input.index_select(2, rows).index_select(3, cols);
-    }
-
-    return torch::constant_pad_nd(input, torch::IntList{pad_w, pad_w, pad_h, pad_h}, fill);
-}
 
 /// @brief Forward wrapper for morphological operations. (Choose between CPU and CUDA)
 /// @tparam Op Morphological operation (dilation or erosion).
@@ -138,64 +56,23 @@ torch::Tensor MorphoOperation<Op, merge, kind>::forward(torch::autograd::Autogra
     {
 #ifdef WITH_CUDA
 
+        const c10::cuda::CUDAGuard device_guard(input.device());
+        if constexpr (merge == MORPHO_MERGE::IDENTITY)
+        {
+            TORCH_CHECK(out_channels == in_channels, "Identity mode requires weight.shape[0] == input.shape[1]");
+            TORCH_CHECK(weight_shape[1] == 1, "Identity mode requires weight.shape[1] == 1");
+        }
         input_correct_dims = input_correct_dims.contiguous();
         weight_correct_dims = weight_correct_dims.contiguous();
 
-        output = torch::zeros({batch_size, out_channels, height, width}, input_correct_dims.options());
+        // Every output element is written by the kernel, and the border is resolved in the kernel too.
+        output = torch::empty({batch_size, out_channels, height, width}, input_correct_dims.options());
+        max_indices = torch::empty({should_save_indices ? batch_size : 0, out_channels, height, width}, input.options().dtype(torch::kInt));
 
-        if (should_save_indices)
-        {
-            max_indices = torch::zeros({batch_size, out_channels, height, width}, input.options().dtype(torch::kLong));
-        }
-        else
-        {
-            max_indices = torch::empty({0}, input.options().dtype(torch::kLong));
-        }
-
-        auto fill = morpho_fill_scalar<Op>(padding, padding_value, input_correct_dims.scalar_type());
-        auto padded_input = morpho_pad_input<kind>(input_correct_dims, kernel_height_half, kernel_width_half, fill);
-
-        padded_input = padded_input.contiguous();
-
-        int padded_height = height + 2 * kernel_height_half;
-        int padded_width = width + 2 * kernel_width_half;
-
-        constexpr const char* operation_name = (Op == MORPHO_OPERATION::DILATION) ? "morpho_dilation_forward" : "morpho_erosion_forward";
-
-        AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), operation_name, [&] {
-            constexpr bool merge_supports_indices = (merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN);
-
-            if constexpr (merge_supports_indices)
-            {
-                if (should_save_indices)
-                {
-                    morpho_forward_kernel<Op, merge, scalar_t, true>(
-                        padded_input.template data_ptr<scalar_t>(), weight_correct_dims.template data_ptr<scalar_t>(),
-                        output.template data_ptr<scalar_t>(), max_indices.template data_ptr<int64_t>(), batch_size, in_channels, out_channels, height,
-                        width, padded_height, padded_width, kernel_height, kernel_width);
-                }
-                else
-                {
-                    morpho_forward_kernel<Op, merge, scalar_t, false>(
-                        padded_input.template data_ptr<scalar_t>(), weight_correct_dims.template data_ptr<scalar_t>(),
-                        output.template data_ptr<scalar_t>(), nullptr, batch_size, in_channels, out_channels, height, width, padded_height,
-                        padded_width, kernel_height, kernel_width);
-                }
-            }
-            else
-            {
-                morpho_forward_kernel<Op, merge, scalar_t, false>(
-                    padded_input.template data_ptr<scalar_t>(), weight_correct_dims.template data_ptr<scalar_t>(),
-                    output.template data_ptr<scalar_t>(), nullptr, batch_size, in_channels, out_channels, height, width, padded_height, padded_width,
-                    kernel_height, kernel_width);
-            }
+        AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), "morpho_operation_forward_cuda", [&] {
+            morpho_forward_cuda<Op, scalar_t>(input_correct_dims, weight_correct_dims, output, should_save_indices ? max_indices : torch::Tensor(),
+                                              merge, kind == MORPHO_PADDING_KIND::REPLICATE, morpho_fill_value<Op, scalar_t>(padding, padding_value));
         });
-
-        cudaError_t err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            AT_ERROR("CUDA kernel launch error: ", cudaGetErrorString(err));
-        }
 
 #else
         TORCH_CHECK(false, "CUDA not available for this build");
@@ -265,73 +142,15 @@ torch::autograd::tensor_list MorphoOperation<Op, merge, kind>::backward(torch::a
     if (input.is_cuda())
     {
 #ifdef WITH_CUDA
-        auto input_shape = input.sizes();
-        auto weight_shape = weight.sizes();
-        auto batch_size = input_shape[0];
-        auto in_channels = input_shape[1];
-        auto out_channels = weight_shape[0];
-        auto height = input_shape[2];
-        auto width = input_shape[3];
-        auto kernel_height = weight_shape[2];
-        auto kernel_width = weight_shape[3];
-        auto kernel_height_half = kernel_height / 2;
-        auto kernel_width_half = kernel_width / 2;
-
-        // Create gradient tensors
+        const c10::cuda::CUDAGuard device_guard(input.device());
+        // The kernels accumulate into the gradients.
         grad_input = torch::zeros_like(input);
         grad_weight = torch::zeros_like(weight);
-        grad_input.contiguous();
-        grad_weight.contiguous();
 
-        // Recreate padded input for backward pass
-        auto fill = morpho_fill_scalar<Op>(padding, padding_value, input.scalar_type());
-        auto padded_input = morpho_pad_input<kind>(input, kernel_height_half, kernel_width_half, fill);
-
-        // Ensure padded input is contiguous
-        padded_input = padded_input.contiguous();
-
-        int padded_height = height + 2 * kernel_height_half;
-        int padded_width = width + 2 * kernel_width_half;
-
-        constexpr const char* operation_name = "morpho_backward_kernel";
-
-        AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), operation_name, [&] {
-            // Calculate grid dimensions
-            dim3 threads(16, 16);
-            dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y, batch_size);
-            constexpr bool merge_supports_indices = (merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN);
-
-            if constexpr (merge_supports_indices)
-            {
-                if (indices_were_saved)
-                {
-                    morpho_backward_kernel<Op, merge, scalar_t, true>(
-                        padded_input.template data_ptr<scalar_t>(), weight.template data_ptr<scalar_t>(), grad_input.template data_ptr<scalar_t>(),
-                        grad_weight.template data_ptr<scalar_t>(), grad_output.template data_ptr<scalar_t>(), batch_size, in_channels, out_channels,
-                        height, width, padded_height, padded_width, kernel_height, kernel_width, max_indices.template data_ptr<int64_t>());
-                }
-                else
-                {
-                    morpho_backward_kernel<Op, merge, scalar_t, false>(
-                        padded_input.template data_ptr<scalar_t>(), weight.template data_ptr<scalar_t>(), grad_input.template data_ptr<scalar_t>(),
-                        grad_weight.template data_ptr<scalar_t>(), grad_output.template data_ptr<scalar_t>(), batch_size, in_channels, out_channels,
-                        height, width, padded_height, padded_width, kernel_height, kernel_width, nullptr);
-                }
-            }
-            else
-            {
-                morpho_backward_kernel<Op, merge, scalar_t, false>(
-                    padded_input.template data_ptr<scalar_t>(), weight.template data_ptr<scalar_t>(), grad_input.template data_ptr<scalar_t>(),
-                    grad_weight.template data_ptr<scalar_t>(), grad_output.template data_ptr<scalar_t>(), batch_size, in_channels, out_channels,
-                    height, width, padded_height, padded_width, kernel_height, kernel_width, nullptr);
-            }
+        AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_operation_backward_cuda", [&] {
+            morpho_backward_cuda<Op, scalar_t>(input, weight, indices_were_saved ? max_indices : torch::Tensor(), grad_output, grad_input, grad_weight,
+                                               merge, kind == MORPHO_PADDING_KIND::REPLICATE, morpho_fill_value<Op, scalar_t>(padding, padding_value));
         });
-
-        cudaError_t err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            AT_ERROR("CUDA kernel launch error: ", cudaGetErrorString(err));
-        }
 
 #else
         TORCH_CHECK(false, "CUDA not available for this build");

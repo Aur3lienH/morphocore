@@ -11,7 +11,7 @@ path_to_cpp = "morphocore/functional/csrc/cpp"
 path_to_cuda = "morphocore/functional/csrc/cuda"
 
 cpp_files = ["morpho_op.cpp", "reshaper.cpp", "smorph.cpp", "bindings.cpp", "smorph_scm.cpp"]
-cuda_files = ["smorph.cu", "morpho_op.cu", "morpho_op_kernels.cu", "smorph_kernels.cu"]
+cuda_files = ["smorph.cu", "morpho_op.cu", "smorph_kernels.cu"]
 
 cpp_sources = [os.path.join(path_to_cpp, file) for file in cpp_files]
 cuda_sources = [os.path.join(path_to_cuda, file) for file in cuda_files]
