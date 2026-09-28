@@ -19,9 +19,9 @@
 template <typename T, int G>
 struct SmorphPairsCUDA
 {
-    T sign[G];       // s: +1 for a dilation like pair (a >= 0), -1 otherwise.
-    T abs_alpha[G];  // |a|
-    T exp2_scale[G]; // |a| / ln 2, so that e_k = exp2((u_k - ref_u) exp2_scale).
+    T sign[G];        // s: +1 for a dilation like pair (a >= 0), -1 otherwise.
+    T abs_alpha[G];   // |a|
+    T exp2_scale[G];  // |a| / ln 2, so that e_k = exp2((u_k - ref_u) exp2_scale).
 
     /// @param alpha Parameter of every channel pair; `pair` gives the index of member m.
     template <typename PairIndex>
@@ -183,9 +183,9 @@ __device__ __forceinline__ void smorph_window_forward(const MorphoGeometryCUDA& 
 /// @param grad_alpha Output, this thread's part of the gradient of each pair's parameter.
 template <typename T, int G>
 __device__ __forceinline__ void smorph_window_backward(const MorphoGeometryCUDA& g, const T* __restrict__ window, const T* __restrict__ weights,
-                                                       const SmorphPairsCUDA<T, G>& pairs, const T (&ref)[G][MORPHO_ROWS], const T (&out)[G][MORPHO_ROWS],
-                                                       const T (&scaled_grad)[G][MORPHO_ROWS], T* __restrict__ grad_window, T* __restrict__ warp_bins,
-                                                       T (&grad_alpha)[G])
+                                                       const SmorphPairsCUDA<T, G>& pairs, const T (&ref)[G][MORPHO_ROWS],
+                                                       const T (&out)[G][MORPHO_ROWS], const T (&scaled_grad)[G][MORPHO_ROWS],
+                                                       T* __restrict__ grad_window, T* __restrict__ warp_bins, T (&grad_alpha)[G])
 {
     const int cols = g.window_cols();
     const int taps = g.taps();
@@ -290,8 +290,8 @@ struct SmorphSoftMergeCUDA
 template <typename T, int OB>
 __global__ void __launch_bounds__(MORPHO_THREADS)
     smorph_forward_kernel(const MorphoGeometryCUDA g, const T* __restrict__ input, const T* __restrict__ weight, const T* __restrict__ alpha,
-                          const T* __restrict__ beta, T* __restrict__ output, const T* __restrict__ target, T* __restrict__ stats, const MORPHO_MERGE merge,
-                          const T winner_tolerance)
+                          const T* __restrict__ beta, T* __restrict__ output, const T* __restrict__ target, T* __restrict__ stats,
+                          const MORPHO_MERGE merge, const T winner_tolerance)
 {
     extern __shared__ __align__(sizeof(double)) unsigned char morpho_shared[];
     T* window = reinterpret_cast<T*>(morpho_shared);
@@ -514,8 +514,8 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
                         // receives p_i (c_i - ref) (c_i - final), with ref the hard extremum.
                         const T bt_sign = bt >= static_cast<T>(0) ? static_cast<T>(1) : static_cast<T>(-1);
                         const T max_u = stats[out_index];
-                        const T p = smorph_exp2((bt_sign * channel_out - max_u) * (bt_sign * bt) * static_cast<T>(1.4426950408889634)) *
-                                    stats[out_planes + out_index];
+                        const T p = smorph_exp2((bt_sign * channel_out - max_u) * (bt_sign * bt) * static_cast<T>(1.4426950408889634))
+                                    * stats[out_planes + out_index];
                         const T centered = channel_out - output[out_index];
                         beta_grad[ob] += p * (channel_out - bt_sign * max_u) * centered * grad[ob][r];
                         grad[ob][r] *= p + bt * p * centered;
@@ -558,7 +558,8 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
                 if (sum != static_cast<T>(0))
                 {
                     const int ob = i / taps;
-                    atomicAdd(grad_weight + (static_cast<int64_t>(o0 + ob) * g.weight_in_channels + (identity ? 0 : c)) * taps + (i - ob * taps), sum);
+                    atomicAdd(grad_weight + (static_cast<int64_t>(o0 + ob) * g.weight_in_channels + (identity ? 0 : c)) * taps + (i - ob * taps),
+                              sum);
                 }
             }
         }

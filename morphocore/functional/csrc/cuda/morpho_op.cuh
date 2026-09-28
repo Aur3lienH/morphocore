@@ -14,8 +14,8 @@
 /// @param indices int32 [batch, out_channels, height, width] receiving the packed winning taps
 ///        (channel << 16 | tap) of MAX and MIN merges, or undefined.
 template <MORPHO_OPERATION op, typename T>
-void morpho_forward_cuda(const at::Tensor& input, const at::Tensor& weight, const at::Tensor& output, const at::Tensor& indices,
-                         MORPHO_MERGE merge, bool replicate, T fill);
+void morpho_forward_cuda(const at::Tensor& input, const at::Tensor& weight, const at::Tensor& output, const at::Tensor& indices, MORPHO_MERGE merge,
+                         bool replicate, T fill);
 
 /// @brief Backward pass, adding the gradients into grad_input and grad_weight (zero initialised).
 /// @param indices Saved indices of a MAX or MIN merge, or undefined to recompute them.

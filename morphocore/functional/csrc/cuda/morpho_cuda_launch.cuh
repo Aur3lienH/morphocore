@@ -36,7 +36,10 @@ inline int64_t morpho_tiles(const MorphoGeometryCUDA& g)
 }
 
 /// @brief Shared memory a block may use, opting in to more than the 48 KiB default when needed.
-inline size_t morpho_max_shared_memory() { return at::cuda::getCurrentDeviceProperties()->sharedMemPerBlockOptin; }
+inline size_t morpho_max_shared_memory()
+{
+    return at::cuda::getCurrentDeviceProperties()->sharedMemPerBlockOptin;
+}
 
 template <typename Kernel>
 void morpho_allow_shared_memory(Kernel kernel, size_t bytes)

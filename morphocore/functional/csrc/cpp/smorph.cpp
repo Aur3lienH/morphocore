@@ -94,7 +94,8 @@ torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradCo
                                            grad_alpha_pairs, torch::Tensor(), merge);
         });
         // A single alpha shared by every pair receives the gradient of all of them.
-        grad_alpha = grad_alpha.numel() == grad_alpha_pairs.numel() ? grad_alpha_pairs.view_as(grad_alpha) : grad_alpha_pairs.sum().view_as(grad_alpha);
+        grad_alpha =
+            grad_alpha.numel() == grad_alpha_pairs.numel() ? grad_alpha_pairs.view_as(grad_alpha) : grad_alpha_pairs.sum().view_as(grad_alpha);
         return {grad_input, grad_weight, grad_alpha};
 #endif
     }

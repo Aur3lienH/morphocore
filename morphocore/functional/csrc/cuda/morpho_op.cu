@@ -21,8 +21,8 @@ void morpho_dispatch_output_group(int group, F f)
 }
 
 template <MORPHO_OPERATION op, typename T>
-void morpho_forward_cuda(const at::Tensor& input, const at::Tensor& weight, const at::Tensor& output, const at::Tensor& indices,
-                         MORPHO_MERGE merge, bool replicate, T fill)
+void morpho_forward_cuda(const at::Tensor& input, const at::Tensor& weight, const at::Tensor& output, const at::Tensor& indices, MORPHO_MERGE merge,
+                         bool replicate, T fill)
 {
     const MorphoGeometryCUDA g = morpho_geometry_cuda(input.sizes(), weight.sizes());
     if (static_cast<int64_t>(g.batch_size) * g.out_channels * g.plane() == 0)
@@ -34,10 +34,10 @@ void morpho_forward_cuda(const at::Tensor& input, const at::Tensor& weight, cons
 
     const auto shared_bytes = [&](int group) { return (g.window_size() + group * g.taps()) * sizeof(T); };
     const bool doubles = sizeof(T) == sizeof(double);
-    const int group = merge == MORPHO_MERGE::IDENTITY
-                          ? morpho_channel_group(g, 1, {1}, shared_bytes)
-                          : morpho_channel_group(g, g.out_channels, doubles ? std::initializer_list<int>{4, 1} : std::initializer_list<int>{8, 4, 1},
-                                                 shared_bytes);
+    const int group =
+        merge == MORPHO_MERGE::IDENTITY
+            ? morpho_channel_group(g, 1, {1}, shared_bytes)
+            : morpho_channel_group(g, g.out_channels, doubles ? std::initializer_list<int>{4, 1} : std::initializer_list<int>{8, 4, 1}, shared_bytes);
 
     morpho_dispatch_output_group<T>(group, [&](auto group_constant) {
         constexpr int OB = decltype(group_constant)::value;
@@ -53,8 +53,8 @@ void morpho_forward_cuda(const at::Tensor& input, const at::Tensor& weight, cons
 
 /// @brief Backward of the MAX and MIN merges, from saved or recomputed indices.
 template <MORPHO_OPERATION op, typename T>
-void morpho_backward_indices_cuda(const MorphoGeometryCUDA& g, const at::Tensor& indices, const at::Tensor& grad_output,
-                                  const at::Tensor& grad_input, const at::Tensor& grad_weight)
+void morpho_backward_indices_cuda(const MorphoGeometryCUDA& g, const at::Tensor& indices, const at::Tensor& grad_output, const at::Tensor& grad_input,
+                                  const at::Tensor& grad_weight)
 {
     const size_t bins_bytes = static_cast<size_t>(g.in_channels) * g.taps() * sizeof(T);
     const bool shared_bins = bins_bytes <= morpho_max_shared_memory();
@@ -69,9 +69,9 @@ void morpho_backward_indices_cuda(const MorphoGeometryCUDA& g, const at::Tensor&
     const auto kernel = morpho_backward_indices_kernel<op, T>;
     const size_t shared = shared_bins ? bins_bytes : 0;
     morpho_allow_shared_memory(kernel, shared);
-    kernel<<<dim3(static_cast<unsigned>((plane + pixels_per_block - 1) / pixels_per_block), g.out_channels), dim3(MORPHO_BLOCK_X, MORPHO_BLOCK_Y), shared,
-             at::cuda::getCurrentCUDAStream()>>>(g, indices.data_ptr<int32_t>(), grad_output.data_ptr<T>(), grad_input.data_ptr<T>(),
-                                                 grad_weight.data_ptr<T>(), pixels_per_block, shared_bins);
+    kernel<<<dim3(static_cast<unsigned>((plane + pixels_per_block - 1) / pixels_per_block), g.out_channels), dim3(MORPHO_BLOCK_X, MORPHO_BLOCK_Y),
+             shared, at::cuda::getCurrentCUDAStream()>>>(g, indices.data_ptr<int32_t>(), grad_output.data_ptr<T>(), grad_input.data_ptr<T>(),
+                                                         grad_weight.data_ptr<T>(), pixels_per_block, shared_bins);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
@@ -136,10 +136,10 @@ void morpho_backward_cuda(const at::Tensor& input, const at::Tensor& weight, con
     }
 }
 
-#define MORPHO_INSTANTIATE_CUDA(OP, T)                                                                                                                  \
-    template void morpho_forward_cuda<MORPHO_OPERATION::OP, T>(const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&, \
-                                                               MORPHO_MERGE, bool, T);                                                                 \
-    template void morpho_backward_cuda<MORPHO_OPERATION::OP, T>(const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&, \
+#define MORPHO_INSTANTIATE_CUDA(OP, T)                                                                                                               \
+    template void morpho_forward_cuda<MORPHO_OPERATION::OP, T>(const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&,           \
+                                                               MORPHO_MERGE, bool, T);                                                               \
+    template void morpho_backward_cuda<MORPHO_OPERATION::OP, T>(const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&,          \
                                                                 const at::Tensor&, const at::Tensor&, MORPHO_MERGE, bool, T);
 
 MORPHO_INSTANTIATE_CUDA(DILATION, float)

@@ -148,8 +148,9 @@ torch::autograd::tensor_list MorphoOperation<Op, merge, kind>::backward(torch::a
         grad_weight = torch::zeros_like(weight);
 
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_operation_backward_cuda", [&] {
-            morpho_backward_cuda<Op, scalar_t>(input, weight, indices_were_saved ? max_indices : torch::Tensor(), grad_output, grad_input, grad_weight,
-                                               merge, kind == MORPHO_PADDING_KIND::REPLICATE, morpho_fill_value<Op, scalar_t>(padding, padding_value));
+            morpho_backward_cuda<Op, scalar_t>(input, weight, indices_were_saved ? max_indices : torch::Tensor(), grad_output, grad_input,
+                                               grad_weight, merge, kind == MORPHO_PADDING_KIND::REPLICATE,
+                                               morpho_fill_value<Op, scalar_t>(padding, padding_value));
         });
 
 #else

@@ -223,9 +223,9 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
 ///        compare and swap loops.
 template <MORPHO_OPERATION op, typename T, int OB>
 __global__ void __launch_bounds__(MORPHO_THREADS)
-    morpho_backward_pairs_kernel(const MorphoGeometryCUDA g, const T* __restrict__ input, const T* __restrict__ weight, const T* __restrict__ grad_output,
-                                 T* __restrict__ grad_input, T* __restrict__ grad_weight, const MorphoMergeCUDA<T> m, const MorphoBorderCUDA<T> border,
-                                 int copies)
+    morpho_backward_pairs_kernel(const MorphoGeometryCUDA g, const T* __restrict__ input, const T* __restrict__ weight,
+                                 const T* __restrict__ grad_output, T* __restrict__ grad_input, T* __restrict__ grad_weight,
+                                 const MorphoMergeCUDA<T> m, const MorphoBorderCUDA<T> border, int copies)
 {
     using Op = MorphoOpCUDA<op>;
     extern __shared__ __align__(sizeof(double)) unsigned char morpho_shared[];
@@ -327,7 +327,8 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
                 if (sum != static_cast<T>(0))
                 {
                     const int ob = i / taps;
-                    atomicAdd(grad_weight_group + static_cast<int64_t>(ob) * g.weight_in_channels * taps + (i - ob * taps), Op::template weight_sign<T>() * sum);
+                    atomicAdd(grad_weight_group + static_cast<int64_t>(ob) * g.weight_in_channels * taps + (i - ob * taps),
+                              Op::template weight_sign<T>() * sum);
                 }
             }
         }

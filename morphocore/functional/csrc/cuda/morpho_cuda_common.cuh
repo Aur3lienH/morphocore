@@ -40,10 +40,14 @@ struct MorphoGeometryCUDA
     int pad_w;  // kernel_width / 2
 
     __host__ __device__ int taps() const { return kernel_height * kernel_width; }
+
     __host__ __device__ int64_t plane() const { return static_cast<int64_t>(height) * width; }
+
     /// Input window of one output tile, see morpho_load_window.
     __host__ __device__ int window_rows() const { return MORPHO_TILE_H + kernel_height - 1; }
+
     __host__ __device__ int window_cols() const { return MORPHO_TILE_W + kernel_width - 1; }
+
     __host__ __device__ int window_size() const { return window_rows() * window_cols(); }
 };
 
@@ -231,8 +235,5 @@ struct MorphoMergeCUDA
         }
     }
 
-    __device__ T finalize(T merged, int in_channels) const
-    {
-        return merge == MORPHO_MERGE::AVERAGE ? merged / static_cast<T>(in_channels) : merged;
-    }
+    __device__ T finalize(T merged, int in_channels) const { return merge == MORPHO_MERGE::AVERAGE ? merged / static_cast<T>(in_channels) : merged; }
 };

@@ -20,6 +20,6 @@ void smorph_forward_cuda(const at::Tensor& input, const at::Tensor& weight, cons
 ///        grad_alpha (one value per channel pair, like alpha) and grad_beta (SMOOTH only).
 /// @param output Output of the forward pass.
 template <typename T>
-void smorph_backward_cuda(const at::Tensor& input, const at::Tensor& weight, const at::Tensor& alpha, const at::Tensor& beta, const at::Tensor& output,
-                          const at::Tensor& grad_output, const at::Tensor& grad_input, const at::Tensor& grad_weight, const at::Tensor& grad_alpha,
-                          const at::Tensor& grad_beta, MORPHO_MERGE merge);
+void smorph_backward_cuda(const at::Tensor& input, const at::Tensor& weight, const at::Tensor& alpha, const at::Tensor& beta,
+                          const at::Tensor& output, const at::Tensor& grad_output, const at::Tensor& grad_input, const at::Tensor& grad_weight,
+                          const at::Tensor& grad_alpha, const at::Tensor& grad_beta, MORPHO_MERGE merge);

@@ -10,8 +10,8 @@ constexpr T SMORPH_WINNER_TOLERANCE = static_cast<T>(1e-6);
 
 /// @brief Forward kernel launch, also used in stats mode by the backward pass.
 template <typename T>
-void smorph_launch_forward(const MorphoGeometryCUDA& g, const at::Tensor& input, const at::Tensor& weight, const at::Tensor& alpha, const at::Tensor& beta,
-                           T* output, const T* target, T* stats, MORPHO_MERGE merge)
+void smorph_launch_forward(const MorphoGeometryCUDA& g, const at::Tensor& input, const at::Tensor& weight, const at::Tensor& alpha,
+                           const at::Tensor& beta, T* output, const T* target, T* stats, MORPHO_MERGE merge)
 {
     const auto shared_bytes = [&](int group) { return (g.window_size() + group * g.taps()) * sizeof(T); };
     const int group = merge == MORPHO_MERGE::IDENTITY ? morpho_channel_group(g, 1, {1}, shared_bytes)
@@ -41,9 +41,9 @@ void smorph_forward_cuda(const at::Tensor& input, const at::Tensor& weight, cons
 }
 
 template <typename T>
-void smorph_backward_cuda(const at::Tensor& input, const at::Tensor& weight, const at::Tensor& alpha, const at::Tensor& beta, const at::Tensor& output,
-                          const at::Tensor& grad_output, const at::Tensor& grad_input, const at::Tensor& grad_weight, const at::Tensor& grad_alpha,
-                          const at::Tensor& grad_beta, MORPHO_MERGE merge)
+void smorph_backward_cuda(const at::Tensor& input, const at::Tensor& weight, const at::Tensor& alpha, const at::Tensor& beta,
+                          const at::Tensor& output, const at::Tensor& grad_output, const at::Tensor& grad_input, const at::Tensor& grad_weight,
+                          const at::Tensor& grad_alpha, const at::Tensor& grad_beta, MORPHO_MERGE merge)
 {
     const MorphoGeometryCUDA g = morpho_geometry_cuda(input.sizes(), weight.sizes());
     if (static_cast<int64_t>(g.batch_size) * g.out_channels * g.plane() == 0)
@@ -80,10 +80,12 @@ void smorph_backward_cuda(const at::Tensor& input, const at::Tensor& weight, con
     });
 }
 
-#define SMORPH_INSTANTIATE_CUDA(T)                                                                                                                    \
-    template void smorph_forward_cuda<T>(const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&, MORPHO_MERGE); \
+#define SMORPH_INSTANTIATE_CUDA(T)                                                                                                                   \
+    template void smorph_forward_cuda<T>(const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&,              \
+                                         MORPHO_MERGE);                                                                                              \
     template void smorph_backward_cuda<T>(const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&,             \
-                                          const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&, MORPHO_MERGE);
+                                          const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&,             \
+                                          MORPHO_MERGE);
 
 SMORPH_INSTANTIATE_CUDA(float)
 SMORPH_INSTANTIATE_CUDA(double)
