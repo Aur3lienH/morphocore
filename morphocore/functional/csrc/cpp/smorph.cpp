@@ -5,8 +5,7 @@
 #include "reshaper.hpp"
 
 #ifdef WITH_CUDA
-    #include <cuda_runtime.h>
-    #include <device_launch_parameters.h>
+    #include <c10/cuda/CUDAGuard.h>
 
     #include "../cuda/smorph.cuh"
 #endif
@@ -34,31 +33,22 @@ torch::Tensor Smorph<merge>::forward(torch::autograd::AutogradContext* ctx, torc
     if (input.is_cuda())
     {
 #ifdef WITH_CUDA
-        auto batch_size = input_shape[0];
-        auto in_channels = input_shape[1];
-        auto out_channels = weight_shape[0];
-        auto height = input_shape[2];
-        auto width = input_shape[3];
-        auto kernel_height = weight_shape[2];
-        auto kernel_width = weight_shape[3];
-        auto kernel_height_half = kernel_height / 2;
-        auto kernel_width_half = kernel_width / 2;
+        const c10::cuda::CUDAGuard device_guard(input.device());
+        auto input_contig = input_correct_dims.contiguous();
+        auto weight_contig = weight_correct_dims.contiguous();
+        if constexpr (merge == MORPHO_MERGE::IDENTITY)
+        {
+            TORCH_CHECK(weight_shape[0] == input_shape[1], "Identity mode requires weight.shape[0] == input.shape[1]");
+            TORCH_CHECK(weight_shape[1] == 1, "Identity mode requires weight.shape[1] == 1, got ", weight_shape[1]);
+        }
+        const auto alpha_pairs = smorph_pair_alphas<merge>(alpha, MorphoGeometryCPU::make<float>(input_contig, weight_contig));
 
-        // cudaFuncSetAttribute(morpho_smorph_forward_kernel<float>, cudaFuncAttributePreferredSharedMemoryCarveout, cudaSharedmemCarveoutMaxShared);
-        // Create output tensors on the same device as input
-        torch::Tensor output = torch::zeros({batch_size, weight_shape[0], height, width}, input.options());
-        torch::Tensor reference_values = torch::zeros({batch_size, weight_shape[0], height, width}, input.options());
-        torch::Tensor max_values = torch::zeros({batch_size, weight_shape[0], height, width}, input.options());
-        AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_forward_kernel", ([&] {
-                                       morpho_smorph_forward_kernel<merge, scalar_t>(
-                                           input_correct_dims.data_ptr<scalar_t>(), weight_correct_dims.data_ptr<scalar_t>(),
-                                           alpha.data_ptr<scalar_t>(), output.data_ptr<scalar_t>(), reference_values.data_ptr<scalar_t>(),
-                                           max_values.data_ptr<scalar_t>(), batch_size, in_channels, out_channels, height, width, kernel_height,
-                                           kernel_width, kernel_height_half, kernel_width_half);
-                                   }));
-        output = input_dim_manager.ToOriginalTensor(output);
-        ctx->save_for_backward({output, reference_values, max_values, alpha, input_correct_dims, weight_correct_dims});
-        return output;
+        torch::Tensor output = torch::empty({input_shape[0], weight_shape[0], input_shape[2], input_shape[3]}, input.options());
+        AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "smorph_forward_cuda",
+                                   [&] { smorph_forward_cuda<scalar_t>(input_contig, weight_contig, alpha_pairs, torch::Tensor(), output, merge); });
+        // The backward pass reads the 4D output: the merge target of MAX and MIN.
+        ctx->save_for_backward({output, torch::Tensor(), torch::Tensor(), alpha, input_contig, weight_contig});
+        return input_dim_manager.ToOriginalTensor(output);
 #endif
     }
     else
@@ -96,38 +86,15 @@ torch::autograd::tensor_list Smorph<merge>::backward(torch::autograd::AutogradCo
     if (grad_outputs[0].is_cuda())
     {
 #ifdef WITH_CUDA
-
-        auto input_shape = input.sizes();
-        auto weight_shape = weight.sizes();
-        auto batch_size = input_shape[0];
-        auto in_channels = input_shape[1];
-        auto height = input_shape[2];
-        auto width = input_shape[3];
-        auto out_channels = weight_shape[0];
-        auto kernel_height = weight_shape[2];
-        auto kernel_width = weight_shape[3];
-        auto kernel_height_half = kernel_height / 2;
-        auto kernel_width_half = kernel_width / 2;
-
-        // Ensure contiguous memory layout because CUDA is **** !
-        auto input_contig = input.contiguous();
-        auto weight_contig = weight.contiguous();
-        auto alpha_contig = alpha.contiguous();
-        auto grad_output_contig = grad_outputs[0].contiguous();
-
-        AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_smorph_backward_kernel", ([&] {
-                                       morpho_smorph_backward_kernel<merge, scalar_t>(
-                                           grad_output_contig.data_ptr<scalar_t>(), grad_input.data_ptr<scalar_t>(), grad_weight.data_ptr<scalar_t>(),
-                                           grad_alpha.data_ptr<scalar_t>(), alpha_contig.data_ptr<scalar_t>(), input_contig.data_ptr<scalar_t>(),
-                                           weight_contig.data_ptr<scalar_t>(), batch_size, in_channels, out_channels, height, width, kernel_height,
-                                           kernel_width, kernel_height_half, kernel_width_half);
-                                   }));
-
-        cudaError_t err = cudaGetLastError();
-        if (err != cudaSuccess)
-        {
-            AT_ERROR("CUDA kernel launch error: ", cudaGetErrorString(err));
-        }
+        const c10::cuda::CUDAGuard device_guard(input.device());
+        const auto alpha_pairs = smorph_pair_alphas<merge>(alpha, MorphoGeometryCPU::make<float>(input, weight));
+        torch::Tensor grad_alpha_pairs = torch::zeros_like(alpha_pairs);
+        AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "smorph_backward_cuda", [&] {
+            smorph_backward_cuda<scalar_t>(input, weight, alpha_pairs, torch::Tensor(), output, grad_outputs[0].contiguous(), grad_input, grad_weight,
+                                           grad_alpha_pairs, torch::Tensor(), merge);
+        });
+        // A single alpha shared by every pair receives the gradient of all of them.
+        grad_alpha = grad_alpha.numel() == grad_alpha_pairs.numel() ? grad_alpha_pairs.view_as(grad_alpha) : grad_alpha_pairs.sum().view_as(grad_alpha);
         return {grad_input, grad_weight, grad_alpha};
 #endif
     }

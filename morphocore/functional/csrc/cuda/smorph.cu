@@ -1,170 +1,89 @@
 #include "smorph.cuh"
+#include "morpho_cuda_launch.cuh"
 #include "smorph_kernels.cuh"
-#include "smorph_forward.cuh"
-#include "smorph_backward.cuh"
-#include "smorph_forward_identity.cuh"
-#include "smorph_backward_identity.cuh"
-#include "../cpp/morpho_op_enum.hpp"
-#include <stdio.h>
-#include <torch/torch.h>
-#include <iostream>
 
-template <MORPHO_MERGE merge, typename scalar_t>
-void morpho_smorph_forward_kernel(const scalar_t* input, const scalar_t* weight, const scalar_t* alpha, scalar_t* output,
-                                  scalar_t* references_indexes, scalar_t* sum_values, int batch_size, int input_channel, int output_channel,
-                                  int height, int width, int kernel_height, int kernel_width, int kernel_height_half, int kernel_width_half)
+// Launchers of the CUDA Smorph kernels (smorph_kernels.cuh).
+
+/// @brief Channels within this distance of the MAX / MIN merge share its gradient, as on the CPU.
+template <typename T>
+constexpr T SMORPH_WINNER_TOLERANCE = static_cast<T>(1e-6);
+
+/// @brief Forward kernel launch, also used in stats mode by the backward pass.
+template <typename T>
+void smorph_launch_forward(const MorphoGeometryCUDA& g, const at::Tensor& input, const at::Tensor& weight, const at::Tensor& alpha, const at::Tensor& beta,
+                           T* output, const T* target, T* stats, MORPHO_MERGE merge)
 {
-    if constexpr (merge == MORPHO_MERGE::IDENTITY)
-    {
-        // IDENTITY mode: input_channels == output_channels
-        const int PADDED_TILE_WIDTH = TILE_WIDTH + 2 * kernel_width_half;
-        const int PADDED_TILE_HEIGHT = TILE_HEIGHT + 2 * kernel_height_half;
-
-        int64_t total_weight_size = input_channel * kernel_height * kernel_width;
-        int64_t total_input_size = input_channel * PADDED_TILE_HEIGHT * PADDED_TILE_WIDTH;
-        int64_t shared_memory_size = sizeof(scalar_t) * (total_weight_size + total_input_size);
-
-        cudaDeviceProp prop;
-        cudaGetDeviceProperties(&prop, 0);
-        
-        if (shared_memory_size > prop.sharedMemPerBlock) {
-            cudaFuncSetAttribute(
-                smorph_forward_identity_kernel<scalar_t>,
-                cudaFuncAttributeMaxDynamicSharedMemorySize,
-                shared_memory_size
-            );
-        }
-        
-        dim3 threads(TILE_WIDTH, TILE_HEIGHT);
-        dim3 blocks((width + TILE_WIDTH - 1) / TILE_WIDTH, (height + TILE_HEIGHT - 1) / TILE_HEIGHT, batch_size);
-
-        smorph_forward_identity_kernel<scalar_t>
-            <<<blocks, threads, shared_memory_size>>>(input, weight, alpha, output, references_indexes, sum_values, batch_size, input_channel,
-                                                      height, width, kernel_height, kernel_width, kernel_height_half, kernel_width_half);
-    }
-    else
-    {
-        // Regular merge modes
-        const int PADDED_TILE_WIDTH = TILE_WIDTH + 2 * kernel_width_half;
-        const int PADDED_TILE_HEIGHT = TILE_HEIGHT + 2 * kernel_height_half;
-
-        int64_t total_weight_size = output_channel * input_channel * kernel_height * kernel_width;
-        int64_t total_input_size = input_channel * PADDED_TILE_HEIGHT * PADDED_TILE_WIDTH;
-        int64_t shared_memory_size = sizeof(scalar_t) * (total_weight_size + total_input_size);
-
-        cudaDeviceProp prop;
-        cudaGetDeviceProperties(&prop, 0);
-        
-        if (shared_memory_size > prop.sharedMemPerBlock) {
-            cudaFuncSetAttribute(
-                smorph_forward_kernel<merge, scalar_t>,
-                cudaFuncAttributeMaxDynamicSharedMemorySize,
-                shared_memory_size
-            );
-        }
-        
-        dim3 threads(TILE_WIDTH, TILE_HEIGHT);
-        dim3 blocks((width + TILE_WIDTH - 1) / TILE_WIDTH, (height + TILE_HEIGHT - 1) / TILE_HEIGHT, batch_size);
-
-        smorph_forward_kernel<merge, scalar_t>
-            <<<blocks, threads, shared_memory_size>>>(input, weight, alpha, output, references_indexes, sum_values, batch_size, input_channel,
-                                                      output_channel, height, width, kernel_height, kernel_width, kernel_height_half, kernel_width_half);
-    }
-    
-    cudaError_t err = cudaDeviceSynchronize();
-    if (err != cudaSuccess)
-    {
-        std::cerr << "CUDA Error in smorph_forward: " << cudaGetErrorString(err) << std::endl;
-        std::cerr << "Merge mode: " << static_cast<int>(merge) << std::endl;
-        std::cerr.flush();
-        throw std::runtime_error(std::string("CUDA Error in forward: ") + cudaGetErrorString(err));
-    }
+    const auto shared_bytes = [&](int group) { return (g.window_size() + group * g.taps()) * sizeof(T); };
+    const int group = merge == MORPHO_MERGE::IDENTITY ? morpho_channel_group(g, 1, {1}, shared_bytes)
+                                                      : morpho_channel_group(g, g.out_channels, {4, 1}, shared_bytes);
+    morpho_dispatch_group<4, 1>(group, [&](auto group_constant) {
+        constexpr int OB = decltype(group_constant)::value;
+        const auto kernel = smorph_forward_kernel<T, OB>;
+        morpho_allow_shared_memory(kernel, shared_bytes(OB));
+        kernel<<<morpho_tile_grid(g, (g.out_channels + OB - 1) / OB), dim3(MORPHO_BLOCK_X, MORPHO_BLOCK_Y), shared_bytes(OB),
+                 at::cuda::getCurrentCUDAStream()>>>(g, input.data_ptr<T>(), weight.data_ptr<T>(), alpha.data_ptr<T>(),
+                                                     beta.defined() ? beta.data_ptr<T>() : nullptr, output, target, stats, merge,
+                                                     SMORPH_WINNER_TOLERANCE<T>);
+        C10_CUDA_KERNEL_LAUNCH_CHECK();
+    });
 }
 
-template <MORPHO_MERGE merge, typename scalar_t>
-void morpho_smorph_backward_kernel(
-    const scalar_t* grad_output, scalar_t* grad_input, scalar_t* grad_weight, 
-    scalar_t* grad_alpha, const scalar_t* alpha, const scalar_t* input, 
-    const scalar_t* weights, int batch_size, int input_channels,
-    int output_channels, int height, int width, int kernel_height, 
-    int kernel_width, int kernel_height_half, int kernel_width_half)
+template <typename T>
+void smorph_forward_cuda(const at::Tensor& input, const at::Tensor& weight, const at::Tensor& alpha, const at::Tensor& beta, const at::Tensor& output,
+                         MORPHO_MERGE merge)
 {
-    dim3 threads(TILE_WIDTH, TILE_HEIGHT);
-    dim3 blocks(
-        (width + TILE_WIDTH - 1) / TILE_WIDTH, 
-        (height + TILE_HEIGHT - 1) / TILE_HEIGHT, 
-        batch_size
-    );
-
-    if constexpr (merge == MORPHO_MERGE::IDENTITY)
+    const MorphoGeometryCUDA g = morpho_geometry_cuda(input.sizes(), weight.sizes());
+    if (static_cast<int64_t>(g.batch_size) * g.out_channels * g.plane() == 0)
     {
-        // IDENTITY mode: input_channels == output_channels
-        smorph_backward_identity_kernel<scalar_t><<<blocks, threads>>>(
-            grad_output, grad_input, grad_weight, grad_alpha, alpha, input,
-            weights, batch_size, input_channels, height, width,
-            kernel_height, kernel_width, kernel_height_half, kernel_width_half
-        );
+        return;
     }
-    else if constexpr (merge == MORPHO_MERGE::MIN || merge == MORPHO_MERGE::MAX)
-    {
-        // MIN/MAX merge modes
-        smorph_backward_minmax_kernel<merge, scalar_t><<<blocks, threads>>>(
-            grad_output, grad_input, grad_weight, grad_alpha, alpha, input,
-            weights, batch_size, input_channels, output_channels, height, width,
-            kernel_height, kernel_width, kernel_height_half, kernel_width_half
-        );
-    }
-    else
-    {
-        // ADD/AVERAGE merge modes
-        smorph_backward_kernel<merge, scalar_t><<<blocks, threads>>>(
-            grad_output, grad_input, grad_weight, grad_alpha, alpha, input,
-            weights, batch_size, input_channels, output_channels, height, width,
-            kernel_height, kernel_width, kernel_height_half, kernel_width_half
-        );
-    }
-
-    cudaError_t sync_err = cudaDeviceSynchronize();
-    if (sync_err != cudaSuccess)
-    {
-        throw std::runtime_error(
-            "CUDA Error in smorph_backward: " + std::string(cudaGetErrorString(sync_err)) +
-            "\nMerge mode: " + std::to_string(static_cast<int>(merge)) +
-            "\nInput channels: " + std::to_string(input_channels) +
-            "\nKernel size: " + std::to_string(kernel_height * kernel_width)
-        );
-    }
-    
-    cudaError_t launch_err = cudaGetLastError();
-    if (launch_err != cudaSuccess)
-    {
-        throw std::runtime_error(
-            "CUDA Launch Error in smorph_backward: " + std::string(cudaGetErrorString(launch_err))
-        );
-    }
+    smorph_launch_forward<T>(g, input, weight, alpha, beta, output.data_ptr<T>(), nullptr, nullptr, merge);
 }
 
-// Template instantiation macro
-#define INSTANTIATE_SMORPH_KERNELS(MERGE_TYPE, SCALAR_T)                                                                                             \
-    template void morpho_smorph_forward_kernel<MERGE_TYPE, SCALAR_T>(                                                                                \
-        const SCALAR_T* input, const SCALAR_T* weight, const SCALAR_T* alpha, SCALAR_T* output, SCALAR_T* references_indexes, SCALAR_T* sum_values,  \
-        int batch_size, int input_channel, int output_channel, int height, int width, int kernel_height, int kernel_width, int kernel_height_half,   \
-        int kernel_width_half);                                                                                                                      \
-                                                                                                                                                     \
-    template void morpho_smorph_backward_kernel<MERGE_TYPE, SCALAR_T>(                                                                               \
-        const SCALAR_T* grad_output, SCALAR_T* grad_input, SCALAR_T* grad_weight, SCALAR_T* grad_alpha, const SCALAR_T* alpha,                       \
-        const SCALAR_T* input, const SCALAR_T* weights, int batch_size, int input_channels, int output_channels, int height, int width,              \
-        int kernel_height, int kernel_width, int kernel_height_half, int kernel_width_half);
+template <typename T>
+void smorph_backward_cuda(const at::Tensor& input, const at::Tensor& weight, const at::Tensor& alpha, const at::Tensor& beta, const at::Tensor& output,
+                          const at::Tensor& grad_output, const at::Tensor& grad_input, const at::Tensor& grad_weight, const at::Tensor& grad_alpha,
+                          const at::Tensor& grad_beta, MORPHO_MERGE merge)
+{
+    const MorphoGeometryCUDA g = morpho_geometry_cuda(input.sizes(), weight.sizes());
+    if (static_cast<int64_t>(g.batch_size) * g.out_channels * g.plane() == 0)
+    {
+        return;
+    }
 
-// Instantiate for all merge modes and scalar types
-INSTANTIATE_SMORPH_KERNELS(MORPHO_MERGE::ADD, float)
-INSTANTIATE_SMORPH_KERNELS(MORPHO_MERGE::AVERAGE, float)
-INSTANTIATE_SMORPH_KERNELS(MORPHO_MERGE::MIN, float)
-INSTANTIATE_SMORPH_KERNELS(MORPHO_MERGE::MAX, float)
-INSTANTIATE_SMORPH_KERNELS(MORPHO_MERGE::IDENTITY, float)
+    // MAX, MIN and SMOOTH route the gradient of a pixel according to every channel: a first pass counts
+    // the winning channels, or keeps the extremum and the sum of the soft merge.
+    at::Tensor stats;
+    const bool smooth = merge == MORPHO_MERGE::SMOOTH;
+    if (smooth || merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN)
+    {
+        stats = at::empty({smooth ? 2 : 1, g.batch_size, g.out_channels, g.height, g.width}, input.options());
+        smorph_launch_forward<T>(g, input, weight, alpha, beta, nullptr, output.data_ptr<T>(), stats.data_ptr<T>(), merge);
+    }
 
-INSTANTIATE_SMORPH_KERNELS(MORPHO_MERGE::ADD, double)
-INSTANTIATE_SMORPH_KERNELS(MORPHO_MERGE::AVERAGE, double)
-INSTANTIATE_SMORPH_KERNELS(MORPHO_MERGE::MIN, double)
-INSTANTIATE_SMORPH_KERNELS(MORPHO_MERGE::MAX, double)
-INSTANTIATE_SMORPH_KERNELS(MORPHO_MERGE::IDENTITY, double)
+    // Input window, its gradient, the group's weights and one set of weight gradient bins per warp.
+    const auto shared_bytes = [&](int group) { return (2 * g.window_size() + (1 + MORPHO_BLOCK_Y) * group * g.taps()) * sizeof(T); };
+    const bool grouped = merge != MORPHO_MERGE::IDENTITY && g.out_channels > 1 && shared_bytes(4) <= morpho_max_shared_memory();
+    const int group = grouped ? 4 : 1;
+    TORCH_CHECK(shared_bytes(group) <= morpho_max_shared_memory(), "Structuring element too large for the CUDA kernels: ", g.kernel_height, "x",
+                g.kernel_width);
+
+    morpho_dispatch_group<4, 1>(group, [&](auto group_constant) {
+        constexpr int OB = decltype(group_constant)::value;
+        const auto kernel = smorph_backward_kernel<T, OB>;
+        morpho_allow_shared_memory(kernel, shared_bytes(OB));
+        kernel<<<morpho_tile_grid(g, g.in_channels), dim3(MORPHO_BLOCK_X, MORPHO_BLOCK_Y), shared_bytes(OB), at::cuda::getCurrentCUDAStream()>>>(
+            g, input.data_ptr<T>(), weight.data_ptr<T>(), alpha.data_ptr<T>(), beta.defined() ? beta.data_ptr<T>() : nullptr, output.data_ptr<T>(),
+            stats.defined() ? stats.data_ptr<T>() : nullptr, grad_output.data_ptr<T>(), grad_input.data_ptr<T>(), grad_weight.data_ptr<T>(),
+            grad_alpha.data_ptr<T>(), grad_beta.defined() ? grad_beta.data_ptr<T>() : nullptr, merge, SMORPH_WINNER_TOLERANCE<T>);
+        C10_CUDA_KERNEL_LAUNCH_CHECK();
+    });
+}
+
+#define SMORPH_INSTANTIATE_CUDA(T)                                                                                                                    \
+    template void smorph_forward_cuda<T>(const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&, MORPHO_MERGE); \
+    template void smorph_backward_cuda<T>(const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&,             \
+                                          const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&, const at::Tensor&, MORPHO_MERGE);
+
+SMORPH_INSTANTIATE_CUDA(float)
+SMORPH_INSTANTIATE_CUDA(double)

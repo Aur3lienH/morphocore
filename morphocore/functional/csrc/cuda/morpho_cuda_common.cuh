@@ -6,7 +6,7 @@
 
 #include "../cpp/morpho_op_enum.hpp"
 
-// Building blocks of the CUDA kernels of the morphological operations.
+// Building blocks shared by the CUDA kernels of the morphological operations and of Smorph.
 //
 // Every kernel works on output tiles. A block of MORPHO_BLOCK_X x MORPHO_BLOCK_Y threads computes a
 // tile of MORPHO_TILE_W x MORPHO_TILE_H output pixels, each thread a column of MORPHO_ROWS pixels,
@@ -47,7 +47,7 @@ struct MorphoGeometryCUDA
     __host__ __device__ int window_size() const { return window_rows() * window_cols(); }
 };
 
-/// @brief How out of image taps are resolved.
+/// @brief How out of image taps are resolved. Smorph excludes them: its windows read NaN there.
 template <typename T>
 struct MorphoBorderCUDA
 {
@@ -107,6 +107,36 @@ __device__ __forceinline__ T morpho_read_tap(const MorphoGeometryCUDA& g, const 
     return plane[static_cast<int64_t>(min(max(y, 0), g.height - 1)) * g.width + min(max(x, 0), g.width - 1)];
 }
 
+/// @brief Add a gradient accumulated in a shared window (same layout as morpho_load_window) to the
+///        global gradient of the input plane. Window elements outside the image are the border: they
+///        never receive gradient, as on the CPU. Neighbouring tiles overlap by the halo, hence the atomics.
+template <typename T>
+__device__ __forceinline__ void morpho_flush_window(const MorphoGeometryCUDA& g, const T* __restrict__ window, int h0, int w0,
+                                                    T* __restrict__ grad_plane)
+{
+    const int rows = g.window_rows();
+    const int cols = g.window_cols();
+    const int y0 = h0 + g.pad_h - (g.kernel_height - 1);
+    const int x0 = w0 + g.pad_w - (g.kernel_width - 1);
+    for (int r = threadIdx.y; r < rows; r += blockDim.y)
+    {
+        const int y = y0 + r;
+        if (y < 0 || y >= g.height)
+        {
+            continue;
+        }
+        for (int c = threadIdx.x; c < cols; c += blockDim.x)
+        {
+            const int x = x0 + c;
+            const T value = window[r * cols + c];
+            if (x >= 0 && x < g.width && value != static_cast<T>(0))
+            {
+                atomicAdd(grad_plane + static_cast<int64_t>(y) * g.width + x, value);
+            }
+        }
+    }
+}
+
 /// @brief Fill n shared memory elements with zeros, with every thread of the block.
 template <typename T>
 __device__ __forceinline__ void morpho_zero_shared(T* data, int n)
@@ -115,6 +145,17 @@ __device__ __forceinline__ void morpho_zero_shared(T* data, int n)
     {
         data[i] = static_cast<T>(0);
     }
+}
+
+/// @brief Sum of a value over the 32 lanes of a warp, in every lane.
+template <typename T>
+__device__ __forceinline__ T morpho_warp_sum(T value)
+{
+    for (int offset = 16; offset > 0; offset /= 2)
+    {
+        value += __shfl_xor_sync(0xffffffffu, value, offset);
+    }
+    return value;
 }
 
 /// @brief Dilation and erosion as used by the tile kernels (see MorphoPolicyCPU for the CPU side).
