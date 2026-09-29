@@ -6,17 +6,19 @@ stages:
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
 
+# Only pip's cache: the venv is rebuilt by every job anyway.
 cache:
   paths:
     - .cache/pip
-    - .venv/
 
 test:
   stage: test
   # CPU only tests: a plain Python image is enough, and its Python must be a supported one.
   image: python:3.11
   before_script:
-    - python3 -m venv .venv
+    # --clear: caches made before .venv/ left the cache paths still restore a venv, whose
+    # interpreter links do not match this image and make ensurepip fail.
+    - python3 -m venv --clear .venv
     - source .venv/bin/activate
     - pip install --upgrade pip setuptools wheel
     # Pinned to the newest torch of the release matrix, so the tests do not depend on the latest
