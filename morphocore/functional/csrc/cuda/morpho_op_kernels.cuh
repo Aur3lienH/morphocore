@@ -443,19 +443,27 @@ __global__ void __launch_bounds__(MORPHO_THREADS, OB > 1 ? 3 : 4)
     const bool identity = m.merge == MORPHO_MERGE::IDENTITY;
     const T scale = m.merge == MORPHO_MERGE::AVERAGE ? static_cast<T>(1) / static_cast<T>(g.in_channels) : static_cast<T>(1);
     const int copy = threadIdx.x & max(copies - 1, 0);
+    // Blocks of the same tile and batch element but other input channels read the same gradient of the
+    // output. Numbered consecutively, they run together and read it from L2 instead of once per input
+    // channel from memory: x spans the input channels and the columns of tiles, y the rows of tiles and
+    // z the batch. IDENTITY blocks share nothing across channels: x and y are the tiles alone and z also
+    // spans the channels, so that neighbouring tiles, which share window halos, run together.
+    const int x_channels = identity ? 1 : g.in_channels;
+    const int x_tile = identity ? blockIdx.x : blockIdx.x / x_channels;
     const int h0 = blockIdx.y * g.tile_height();
-    const int w0 = blockIdx.x * MORPHO_TILE_W;
+    const int w0 = x_tile * MORPHO_TILE_W;
     const int h_first = h0 + threadIdx.y * MORPHO_ROWS;
     const int w = w0 + threadIdx.x;
 
-    for (int z = blockIdx.z; z < g.batch_size * g.in_channels; z += gridDim.z)
+    for (int z = blockIdx.z; z < g.batch_size * (identity ? g.in_channels : 1); z += gridDim.z)
     {
-        const int b = z / g.in_channels;
-        const int c = z - b * g.in_channels;
+        const int b = identity ? z / g.in_channels : z;
+        const int c = identity ? z - b * g.in_channels : blockIdx.x - x_tile * x_channels;
+        const int64_t bc = static_cast<int64_t>(b) * g.in_channels + c;
 
         __syncthreads();  // The previous channel is no longer read.
-        morpho_load_window(g, input + static_cast<int64_t>(z) * g.plane(), h0, w0, border, window);
-        T* grad_plane = grad_input + static_cast<int64_t>(z) * g.plane();
+        morpho_load_window(g, input + bc * g.plane(), h0, w0, border, window);
+        T* grad_plane = grad_input + bc * g.plane();
 
         // IDENTITY: input channel c only feeds output channel c.
         const int o_begin = identity ? c : 0;

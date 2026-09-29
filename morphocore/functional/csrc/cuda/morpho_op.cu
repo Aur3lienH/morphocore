@@ -149,11 +149,19 @@ void morpho_backward_cuda(const at::Tensor& input, const at::Tensor& weight, con
     TORCH_CHECK(shared_bytes(group) <= morpho_max_shared_memory(), "Structuring element too large for the CUDA kernels: ", g.kernel_height, "x",
                 g.kernel_width);
 
+    // See the kernel for the order of the blocks.
+    const bool identity = merge == MORPHO_MERGE::IDENTITY;
+    const dim3 tiles = morpho_tile_grid(g, 1);
+    const int64_t blocks_x = static_cast<int64_t>(tiles.x) * (identity ? 1 : g.in_channels);
+    TORCH_CHECK(blocks_x < (int64_t{1} << 31), "Input too large for the CUDA kernels");
+    const dim3 grid(static_cast<unsigned>(blocks_x), tiles.y,
+                    static_cast<unsigned>(std::min<int64_t>(static_cast<int64_t>(g.batch_size) * (identity ? g.in_channels : 1), 65535)));
+
     const auto launch = [&](auto group_constant) {
         constexpr int OB = decltype(group_constant)::value;
         const auto kernel = morpho_backward_pairs_kernel<op, T, OB>;
         morpho_allow_shared_memory(kernel, shared_bytes(OB));
-        kernel<<<morpho_tile_grid(g, g.in_channels), morpho_tile_block(g), shared_bytes(OB), at::cuda::getCurrentCUDAStream()>>>(
+        kernel<<<grid, morpho_tile_block(g), shared_bytes(OB), at::cuda::getCurrentCUDAStream()>>>(
             g, input.data_ptr<T>(), weight.data_ptr<T>(), grad_output.data_ptr<T>(), grad_input.data_ptr<T>(), grad_weight.data_ptr<T>(),
             MorphoMergeCUDA<T>{merge}, MorphoBorderCUDA<T>{replicate, fill}, copies(OB));
         C10_CUDA_KERNEL_LAUNCH_CHECK();
