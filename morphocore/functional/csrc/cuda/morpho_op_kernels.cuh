@@ -18,6 +18,41 @@ __device__ __forceinline__ void morpho_load_weights(const T* __restrict__ first,
     }
 }
 
+/// @brief Comparison key of the argmax: the value itself, except for doubles, compared as integers.
+///        Double comparisons run on the double units, which the tap loop already saturates with its
+///        additions on most GPUs, while integer ones run at the full rate. The key of a double is its
+///        magnitude with its sign, so that -0 and +0 tie, and NaN never improves an extremum, as on the CPU.
+template <MORPHO_OPERATION op, typename T>
+struct MorphoArgKey
+{
+    using Key = T;
+
+    __device__ static Key key(T value) { return value; }
+
+    __device__ static T value(Key key) { return key; }
+};
+
+template <MORPHO_OPERATION op>
+struct MorphoArgKey<op, double>
+{
+    using Key = long long;
+    static constexpr long long magnitude_mask = 0x7FFFFFFFFFFFFFFFLL;
+    static constexpr long long infinity = 0x7FF0000000000000LL;
+
+    __device__ static Key key(double value)
+    {
+        const long long bits = __double_as_longlong(value);
+        const long long magnitude = bits & magnitude_mask;
+        if (magnitude > infinity)
+        {
+            return MorphoOpCUDA<op>::dilation ? -magnitude_mask - 1 : magnitude_mask;
+        }
+        return bits < 0 ? -magnitude : magnitude;
+    }
+
+    __device__ static double value(Key key) { return __longlong_as_double(key < 0 ? (-key | (-magnitude_mask - 1)) : key); }
+};
+
 /// @brief Extremum over the structuring element for the MORPHO_ROWS pixels of this thread and the
 ///        G channel pairs of the block.
 /// @tparam shared_window True when the G pairs read the same input window (G output channels of one
@@ -31,9 +66,11 @@ __device__ __forceinline__ void morpho_window_extremum(const MorphoGeometryCUDA&
                                                        T (&best)[G][MORPHO_ROWS], int (&arg)[G][MORPHO_ROWS])
 {
     using Op = MorphoOpCUDA<op>;
+    using ArgKey = MorphoArgKey<op, T>;
     const int cols = g.window_cols();
     const int taps = g.taps();
     const int window_step = shared_window ? 0 : g.window_size();
+    typename ArgKey::Key best_key[G][MORPHO_ROWS];
     // Window element read by tap (0, 0) of the first pixel of this thread.
     const T* origin = windows + (threadIdx.y * MORPHO_ROWS + g.kernel_height - 1) * cols + threadIdx.x + g.kernel_width - 1;
 
@@ -44,6 +81,7 @@ __device__ __forceinline__ void morpho_window_extremum(const MorphoGeometryCUDA&
         for (int r = 0; r < MORPHO_ROWS; r++)
         {
             best[m][r] = Op::template initial_value<T>();
+            best_key[m][r] = ArgKey::key(best[m][r]);
             arg[m][r] = 0;
         }
     }
@@ -73,9 +111,10 @@ __device__ __forceinline__ void morpho_window_extremum(const MorphoGeometryCUDA&
                     const T v = Op::combine(x[r], w);
                     if constexpr (with_arg)
                     {
-                        if (Op::is_better(v, best[m][r]))
+                        const auto key = ArgKey::key(v);
+                        if (Op::is_better(key, best_key[m][r]))
                         {
-                            best[m][r] = v;
+                            best_key[m][r] = key;
                             arg[m][r] = k;
                         }
                     }
@@ -84,6 +123,18 @@ __device__ __forceinline__ void morpho_window_extremum(const MorphoGeometryCUDA&
                         best[m][r] = Op::extremum(best[m][r], v);
                     }
                 }
+            }
+        }
+    }
+    if constexpr (with_arg)
+    {
+#pragma unroll
+        for (int m = 0; m < G; m++)
+        {
+#pragma unroll
+            for (int r = 0; r < MORPHO_ROWS; r++)
+            {
+                best[m][r] = ArgKey::value(best_key[m][r]);
             }
         }
     }
