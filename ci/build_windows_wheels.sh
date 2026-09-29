@@ -41,6 +41,12 @@ rm -rf meta && mkdir meta
 DIST_INFO=$(basename meta/*.dist-info)
 VERSION=$(sed -n 's/^Version: //p' meta/$DIST_INFO/METADATA)
 
+# The torch headers require C++20 from torch 2.14, C++17 before.
+CXX_STD=c++17
+if [ "$(printf '%s\n' 2.14 "$TORCH_VERSION" | sort -V | head -1)" = 2.14 ]; then
+    CXX_STD=c++20
+fi
+
 for PY in $PYTHONS; do
     echo "=== torch $TORCH_VERSION, cp$PY"
     PYDIR=py$PY TORCHDIR=torch$PY OBJ=obj$PY
@@ -64,7 +70,7 @@ EOF
     lld-link /lib /def:$T/lib/libiomp5md.def /out:$T/lib/libiomp5md.lib /machine:x64
 
     # Same sources as setup.py. /openmp is required: at::parallel_for expands to an OpenMP loop here.
-    CFLAGS=(--target=x86_64-pc-windows-msvc /nologo /std:c++17 /O2 /EHsc /MD /DNDEBUG /openmp -w
+    CFLAGS=(--target=x86_64-pc-windows-msvc /nologo /std:$CXX_STD /O2 /EHsc /MD /DNDEBUG /openmp -w
         /imsvc sdk/crt/include /imsvc sdk/sdk/include/ucrt /imsvc sdk/sdk/include/um /imsvc sdk/sdk/include/shared
         /imsvc $T/include /imsvc $T/include/torch/csrc/api/include /imsvc $PYDIR/tools/include
         /I $CSRC /I $CSRC/cpp /I $CSRC/cuda

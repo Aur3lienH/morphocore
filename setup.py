@@ -28,17 +28,19 @@ with_cuda = os.environ.get('MORPHO_WITH_CUDA', '1') == '1'
 # - -Wno-psabi silences a note about passing AVX vectors by value, which never happens across a call:
 #   every function taking vectors is always inlined.
 # - -g0 overrides the -g of the Python build flags: debug info made the library 7x larger.
+# - No -std: torch's BuildExtension adds the standard its headers need (C++17, C++20 from torch 2.14)
+#   to the host compiler and nvcc, and a fixed one would break the other releases.
 if sys.platform.startswith('linux'):
-    cxx_flags = ['-O3', '-DNDEBUG', '-std=c++17', '-fopenmp', '-Wno-unused-variable', '-Wno-psabi', '-g0']
+    cxx_flags = ['-O3', '-DNDEBUG', '-fopenmp', '-Wno-unused-variable', '-Wno-psabi', '-g0']
     link_args = ['-fopenmp']
 elif sys.platform.startswith('darwin'):
-    cxx_flags = ['-O3', '-DNDEBUG', '-std=c++17', '-Wno-psabi']
+    cxx_flags = ['-O3', '-DNDEBUG', '-Wno-psabi']
     link_args = ['-lomp']
 elif sys.platform.startswith('win'):
-    cxx_flags = ['/O2', '/DNDEBUG', '/std:c++17', '/openmp']
+    cxx_flags = ['/O2', '/DNDEBUG', '/openmp']
     link_args = []
 else:
-    cxx_flags = ['-O2', '-std=c++17']
+    cxx_flags = ['-O2']
     link_args = []
 
 torch_version_full = os.environ.get("TORCH_VERSION", torch.__version__.split('+')[0])
@@ -77,7 +79,6 @@ if with_cuda:
         'nvcc': [
             '-O3',
             '--use_fast_math',
-            '-std=c++17',
         ] + arch_flags + [
             '--maxrregcount=96',
             '-Xcompiler=-O3',
