@@ -244,39 +244,56 @@ __device__ __forceinline__ void smorph_window_backward(const MorphoGeometryCUDA&
     }
 }
 
-/// @brief Online soft extremum over the channel outputs c_i (MORPHO_MERGE::SMOOTH): with sb the sign of
-///        beta, keeps m = max sb c_i, sum = sum_i exp(|beta| (sb c_i - m)) and the weighted sum of the c_i.
+/// @brief Merge of the channel outputs c_i of one output pixel, for every merge mode, in three values
+///        whose meaning depends on the mode, so that no mode pays for the registers of another.
+///        MORPHO_MERGE::SMOOTH, online soft extremum with sb the sign of beta: first = m = max_i sb c_i,
+///        second = sum_i exp(|beta| (sb c_i - m)), third = sum_i exp(|beta| (sb c_i - m)) c_i.
+///        Other modes: first = the merge of MorphoMergeCUDA; in stats mode, second counts the channels
+///        within the tolerance of third, the forward output.
 template <typename T>
-struct SmorphSoftMergeCUDA
+struct SmorphMergeStateCUDA
 {
-    T max_u;
-    T sum;
-    T weighted;
+    T first;
+    T second;
+    T third;
 
-    __device__ void reset()
+    __device__ void reset(const MorphoMergeCUDA<T>& m, T target)
     {
-        max_u = -std::numeric_limits<T>::infinity();
-        sum = static_cast<T>(0);
-        weighted = static_cast<T>(0);
+        const bool smooth = m.merge == MORPHO_MERGE::SMOOTH;
+        first = smooth ? -std::numeric_limits<T>::infinity() : m.initial_value();
+        second = static_cast<T>(0);
+        third = smooth ? static_cast<T>(0) : target;
     }
 
-    __device__ void add(T c, T beta_sign, T beta_exp2_scale)
+    __device__ void add(const MorphoMergeCUDA<T>& m, T c, T beta_sign, T beta_exp2_scale, T winner_tolerance)
     {
+        if (m.merge != MORPHO_MERGE::SMOOTH)
+        {
+            first = m.merge_value(first, c);
+            const T distance = c - third;
+            second += distance < winner_tolerance && distance > -winner_tolerance ? static_cast<T>(1) : static_cast<T>(0);
+            return;
+        }
         const T cu = beta_sign * c;
-        if (cu > max_u)
+        if (cu > first)
         {
             // exp2(-inf) = 0 on the first channel.
-            const T rescale = smorph_exp2((max_u - cu) * beta_exp2_scale);
-            sum = sum * rescale + static_cast<T>(1);
-            weighted = weighted * rescale + c;
-            max_u = cu;
+            const T rescale = smorph_exp2((first - cu) * beta_exp2_scale);
+            second = second * rescale + static_cast<T>(1);
+            third = third * rescale + c;
+            first = cu;
         }
         else
         {
-            const T q = smorph_exp2((cu - max_u) * beta_exp2_scale);
-            sum += q;
-            weighted += q * c;
+            const T q = smorph_exp2((cu - first) * beta_exp2_scale);
+            second += q;
+            third += q * c;
         }
+    }
+
+    __device__ T result(const MorphoMergeCUDA<T>& m, int in_channels) const
+    {
+        return m.merge == MORPHO_MERGE::SMOOTH ? third / second : m.finalize(first, in_channels);
     }
 };
 
@@ -303,7 +320,7 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
     const MorphoMergeCUDA<T> m{merge};
     const MorphoBorderCUDA<T> border{false, std::numeric_limits<T>::quiet_NaN()};
     const int groups = (g.out_channels + OB - 1) / OB;
-    const int h0 = blockIdx.y * MORPHO_TILE_H;
+    const int h0 = blockIdx.y * g.tile_height();
     const int w0 = blockIdx.x * MORPHO_TILE_W;
     const int h_first = h0 + threadIdx.y * MORPHO_ROWS;
     const int w = w0 + threadIdx.x;
@@ -318,10 +335,7 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
         const int c_end = identity ? o0 + 1 : g.in_channels;
 
         T beta_sign[OB], beta_scale[OB];
-        T merged[OB][MORPHO_ROWS];
-        SmorphSoftMergeCUDA<T> soft[OB][MORPHO_ROWS];
-        T winners[OB][MORPHO_ROWS];
-        T wanted[OB][MORPHO_ROWS];
+        SmorphMergeStateCUDA<T> merged[OB][MORPHO_ROWS];
 #pragma unroll
         for (int ob = 0; ob < OB; ob++)
         {
@@ -331,14 +345,11 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
 #pragma unroll
             for (int r = 0; r < MORPHO_ROWS; r++)
             {
-                merged[ob][r] = m.initial_value();
-                soft[ob][r].reset();
-                winners[ob][r] = static_cast<T>(0);
                 const int h = h_first + r;
                 const bool inside = ob < valid && h < g.height && w < g.width;
-                wanted[ob][r] = winner_takes_all && stats != nullptr && inside
-                                    ? target[((static_cast<int64_t>(b) * g.out_channels + o0 + ob) * g.height + h) * g.width + w]
-                                    : static_cast<T>(0);
+                merged[ob][r].reset(m, winner_takes_all && stats != nullptr && inside
+                                           ? target[((static_cast<int64_t>(b) * g.out_channels + o0 + ob) * g.height + h) * g.width + w]
+                                           : static_cast<T>(0));
             }
         }
 
@@ -360,17 +371,7 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
 #pragma unroll
                 for (int r = 0; r < MORPHO_ROWS; r++)
                 {
-                    const T channel_out = pairs.sign[ob] * out[ob][r];
-                    if (smooth)
-                    {
-                        soft[ob][r].add(channel_out, beta_sign[ob], beta_scale[ob]);
-                    }
-                    else
-                    {
-                        merged[ob][r] = m.merge_value(merged[ob][r], channel_out);
-                    }
-                    const T distance = channel_out - wanted[ob][r];
-                    winners[ob][r] += distance < winner_tolerance && distance > -winner_tolerance ? static_cast<T>(1) : static_cast<T>(0);
+                    merged[ob][r].add(m, pairs.sign[ob] * out[ob][r], beta_sign[ob], beta_scale[ob], winner_tolerance);
                 }
             }
         }
@@ -389,16 +390,16 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
                 const int64_t out_index = ((static_cast<int64_t>(b) * g.out_channels + o0 + ob) * g.height + h) * g.width + w;
                 if (output != nullptr)
                 {
-                    output[out_index] = smooth ? soft[ob][r].weighted / soft[ob][r].sum : m.finalize(merged[ob][r], g.in_channels);
+                    output[out_index] = merged[ob][r].result(m, g.in_channels);
                 }
                 if (stats != nullptr && winner_takes_all)
                 {
-                    stats[out_index] = winners[ob][r];
+                    stats[out_index] = merged[ob][r].second;
                 }
                 if (stats != nullptr && smooth)
                 {
-                    stats[out_index] = soft[ob][r].max_u;
-                    stats[out_planes + out_index] = static_cast<T>(1) / soft[ob][r].sum;
+                    stats[out_index] = merged[ob][r].first;
+                    stats[out_planes + out_index] = static_cast<T>(1) / merged[ob][r].second;
                 }
             }
         }
@@ -435,7 +436,7 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
     const bool winner_takes_all = merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN;
     const T scale = merge == MORPHO_MERGE::AVERAGE ? static_cast<T>(1) / static_cast<T>(g.in_channels) : static_cast<T>(1);
     const MorphoBorderCUDA<T> border{false, std::numeric_limits<T>::quiet_NaN()};
-    const int h0 = blockIdx.y * MORPHO_TILE_H;
+    const int h0 = blockIdx.y * g.tile_height();
     const int w0 = blockIdx.x * MORPHO_TILE_W;
     const int h_first = h0 + threadIdx.y * MORPHO_ROWS;
     const int w = w0 + threadIdx.x;
@@ -479,7 +480,7 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
             pairs.load(alpha, valid, [&](int ob) { return identity ? c : (o0 + ob) * g.in_channels + c; });
             smorph_load_weights<T, OB>(weight + (static_cast<int64_t>(o0) * g.weight_in_channels + (identity ? 0 : c)) * taps,
                                        static_cast<int64_t>(g.weight_in_channels) * taps, valid, taps, pairs, weights);
-            morpho_zero_shared(bins, MORPHO_BLOCK_Y * OB * taps);
+            morpho_zero_shared(bins, g.block_rows * OB * taps);
             __syncthreads();
 
             T ref[OB][MORPHO_ROWS], inv_sum[OB][MORPHO_ROWS], out[OB][MORPHO_ROWS];
@@ -551,7 +552,7 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
             for (int i = threadIdx.y * blockDim.x + threadIdx.x; i < valid * taps; i += blockDim.x * blockDim.y)
             {
                 T sum = static_cast<T>(0);
-                for (int warp = 0; warp < MORPHO_BLOCK_Y; warp++)
+                for (int warp = 0; warp < g.block_rows; warp++)
                 {
                     sum += bins[warp * OB * taps + i];
                 }

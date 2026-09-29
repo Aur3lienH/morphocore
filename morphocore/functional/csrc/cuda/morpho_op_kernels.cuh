@@ -113,10 +113,39 @@ __device__ int morpho_find_tap(const MorphoGeometryCUDA& g, const T* __restrict_
     return 0;
 }
 
-/// @brief Forward tile kernel, every merge; a block computes OB output channels. For MAX and MIN with
-///        indices, the tap loops only track the winning channel; its winning tap is searched once at
-///        the end, which costs one channel instead of an argmax in the inner loop of every channel.
-template <MORPHO_OPERATION op, typename T, int OB>
+/// @brief Store the merged value of an output pixel, and its packed index when indices is set; pixels
+///        and channels past the end of the tensors are skipped.
+template <typename T>
+__device__ __forceinline__ void morpho_store_output(const MorphoGeometryCUDA& g, T* __restrict__ output, int32_t* __restrict__ indices,
+                                                    const MorphoMergeCUDA<T>& m, int b, int o, int h, int w, T merged, int32_t packed_index)
+{
+    if (o < g.out_channels && h < g.height && w < g.width)
+    {
+        const int64_t out_index = ((static_cast<int64_t>(b) * g.out_channels + o) * g.height + h) * g.width + w;
+        if (output != nullptr)
+        {
+            output[out_index] = m.finalize(merged, g.in_channels);
+        }
+        if (indices != nullptr)
+        {
+            indices[out_index] = packed_index;
+        }
+    }
+}
+
+/// @brief How the forward kernel produces the packed indices of the MAX and MIN merges. Each mode is a
+///        separate instantiation: code and registers a launch does not need would slow its loops.
+enum class MorphoIndexMode
+{
+    NONE,    // No indices.
+    SEARCH,  // The tap loops only track the winning channel, whose winning tap is searched once at the
+             // end: one channel of work instead of an argmax in the inner loop of every channel.
+    TRACK    // A single input channel, or IDENTITY: the search would double the work, the tap loop
+             // tracks the argmax instead.
+};
+
+/// @brief Forward tile kernel, every merge; a block computes OB output channels.
+template <MORPHO_OPERATION op, typename T, int OB, MorphoIndexMode index_mode>
 __global__ void __launch_bounds__(MORPHO_THREADS)
     morpho_forward_kernel(const MorphoGeometryCUDA g, const T* __restrict__ input, const T* __restrict__ weight, T* __restrict__ output,
                           int32_t* __restrict__ indices, const MorphoMergeCUDA<T> m, const MorphoBorderCUDA<T> border)
@@ -127,7 +156,7 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
 
     const bool identity = m.merge == MORPHO_MERGE::IDENTITY;
     const int groups = (g.out_channels + OB - 1) / OB;
-    const int h0 = blockIdx.y * MORPHO_TILE_H;
+    const int h0 = blockIdx.y * g.tile_height();
     const int w0 = blockIdx.x * MORPHO_TILE_W;
     const int h_first = h0 + threadIdx.y * MORPHO_ROWS;
     const int w = w0 + threadIdx.x;
@@ -139,6 +168,28 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
         // IDENTITY pairs output channel o with input channel o only, in groups of one channel.
         const int c_begin = identity ? o0 : 0;
         const int c_end = identity ? o0 + 1 : g.in_channels;
+        if constexpr (index_mode == MorphoIndexMode::TRACK)
+        {
+            __syncthreads();  // The previous group is no longer read.
+            morpho_load_window(g, input + (static_cast<int64_t>(b) * g.in_channels + c_begin) * g.plane(), h0, w0, border, window);
+            morpho_load_weights<T, OB>(weight + static_cast<int64_t>(o0) * g.weight_in_channels * g.taps(),
+                                       static_cast<int64_t>(g.weight_in_channels) * g.taps(), g.out_channels - o0, g.taps(), weights);
+            __syncthreads();
+            T best[OB][MORPHO_ROWS];
+            int arg[OB][MORPHO_ROWS];
+            morpho_window_extremum<op, T, OB, true, true>(g, window, weights, best, arg);
+#pragma unroll
+            for (int ob = 0; ob < OB; ob++)
+            {
+#pragma unroll
+                for (int r = 0; r < MORPHO_ROWS; r++)
+                {
+                    morpho_store_output(g, output, indices, m, b, o0 + ob, h_first + r, w, m.merge_value(m.initial_value(), best[ob][r]),
+                                        (c_begin << 16) | arg[ob][r]);
+                }
+            }
+            continue;
+        }
 
         T merged[OB][MORPHO_ROWS];
         int winner[OB][MORPHO_ROWS];
@@ -182,28 +233,19 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
 #pragma unroll
         for (int ob = 0; ob < OB; ob++)
         {
-            const int o = o0 + ob;
 #pragma unroll
             for (int r = 0; r < MORPHO_ROWS; r++)
             {
-                const int h = h_first + r;
-                if (o >= g.out_channels || h >= g.height || w >= g.width)
-                {
-                    continue;
-                }
-                const int64_t out_index = ((static_cast<int64_t>(b) * g.out_channels + o) * g.height + h) * g.width + w;
-                if (output != nullptr)
-                {
-                    output[out_index] = m.finalize(merged[ob][r], g.in_channels);
-                }
-                if (indices != nullptr)
+                int tap = 0;
+                const int c = winner[ob][r];
+                if (index_mode == MorphoIndexMode::SEARCH && o0 + ob < g.out_channels && h_first + r < g.height && w < g.width)
                 {
                     // MAX and MIN: the merged value is the extremum of the winning channel.
-                    const int c = winner[ob][r];
-                    const T* plane = input + (static_cast<int64_t>(b) * g.in_channels + c) * g.plane();
-                    const T* weight_pair = weight + (static_cast<int64_t>(o) * g.weight_in_channels + c) * g.taps();
-                    indices[out_index] = (c << 16) | morpho_find_tap<op>(g, plane, weight_pair, h, w, merged[ob][r], border);
+                    tap = morpho_find_tap<op>(g, input + (static_cast<int64_t>(b) * g.in_channels + c) * g.plane(),
+                                              weight + (static_cast<int64_t>(o0 + ob) * g.weight_in_channels + c) * g.taps(), h_first + r, w,
+                                              merged[ob][r], border);
                 }
+                morpho_store_output(g, output, indices, m, b, o0 + ob, h_first + r, w, merged[ob][r], (c << 16) | tap);
             }
         }
     }
@@ -222,7 +264,9 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
 ///        global memory directly, which is faster for doubles, whose shared memory atomics are 64 bit
 ///        compare and swap loops.
 template <MORPHO_OPERATION op, typename T, int OB>
-__global__ void __launch_bounds__(MORPHO_THREADS)
+// Three blocks per SM with groups of channels, four without: the register allocation otherwise varies
+// with unrelated code changes, and one block less measured about 10% slower.
+__global__ void __launch_bounds__(MORPHO_THREADS, OB > 1 ? 3 : 4)
     morpho_backward_pairs_kernel(const MorphoGeometryCUDA g, const T* __restrict__ input, const T* __restrict__ weight,
                                  const T* __restrict__ grad_output, T* __restrict__ grad_input, T* __restrict__ grad_weight,
                                  const MorphoMergeCUDA<T> m, const MorphoBorderCUDA<T> border, int copies)
@@ -238,7 +282,7 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
     const bool identity = m.merge == MORPHO_MERGE::IDENTITY;
     const T scale = m.merge == MORPHO_MERGE::AVERAGE ? static_cast<T>(1) / static_cast<T>(g.in_channels) : static_cast<T>(1);
     const int copy = threadIdx.x & max(copies - 1, 0);
-    const int h0 = blockIdx.y * MORPHO_TILE_H;
+    const int h0 = blockIdx.y * g.tile_height();
     const int w0 = blockIdx.x * MORPHO_TILE_W;
     const int h_first = h0 + threadIdx.y * MORPHO_ROWS;
     const int w = w0 + threadIdx.x;

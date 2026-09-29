@@ -24,7 +24,7 @@ template <MORPHO_OPERATION op, typename T>
 void morpho_forward_cuda(const at::Tensor& input, const at::Tensor& weight, const at::Tensor& output, const at::Tensor& indices, MORPHO_MERGE merge,
                          bool replicate, T fill)
 {
-    const MorphoGeometryCUDA g = morpho_geometry_cuda(input.sizes(), weight.sizes());
+    MorphoGeometryCUDA g = morpho_geometry_cuda(input.sizes(), weight.sizes());
     if (static_cast<int64_t>(g.batch_size) * g.out_channels * g.plane() == 0)
     {
         return;
@@ -38,15 +38,20 @@ void morpho_forward_cuda(const at::Tensor& input, const at::Tensor& weight, cons
         merge == MORPHO_MERGE::IDENTITY
             ? morpho_channel_group(g, 1, {1}, shared_bytes)
             : morpho_channel_group(g, g.out_channels, doubles ? std::initializer_list<int>{4, 1} : std::initializer_list<int>{8, 4, 1}, shared_bytes);
+    morpho_fit_block_rows(g, static_cast<int64_t>(g.batch_size) * ((g.out_channels + group - 1) / group));
+    const MorphoIndexMode index_mode = !indices.defined()                                      ? MorphoIndexMode::NONE
+                                       : merge == MORPHO_MERGE::IDENTITY || g.in_channels == 1 ? MorphoIndexMode::TRACK
+                                                                                               : MorphoIndexMode::SEARCH;
 
     morpho_dispatch_output_group<T>(group, [&](auto group_constant) {
         constexpr int OB = decltype(group_constant)::value;
-        const auto kernel = morpho_forward_kernel<op, T, OB>;
+        const auto kernel = index_mode == MorphoIndexMode::NONE     ? morpho_forward_kernel<op, T, OB, MorphoIndexMode::NONE>
+                            : index_mode == MorphoIndexMode::SEARCH ? morpho_forward_kernel<op, T, OB, MorphoIndexMode::SEARCH>
+                                                                    : morpho_forward_kernel<op, T, OB, MorphoIndexMode::TRACK>;
         morpho_allow_shared_memory(kernel, shared_bytes(OB));
-        kernel<<<morpho_tile_grid(g, (g.out_channels + OB - 1) / OB), dim3(MORPHO_BLOCK_X, MORPHO_BLOCK_Y), shared_bytes(OB),
-                 at::cuda::getCurrentCUDAStream()>>>(g, input.data_ptr<T>(), weight.data_ptr<T>(), output.defined() ? output.data_ptr<T>() : nullptr,
-                                                     indices.defined() ? indices.data_ptr<int32_t>() : nullptr, MorphoMergeCUDA<T>{merge},
-                                                     MorphoBorderCUDA<T>{replicate, fill});
+        kernel<<<morpho_tile_grid(g, (g.out_channels + OB - 1) / OB), morpho_tile_block(g), shared_bytes(OB), at::cuda::getCurrentCUDAStream()>>>(
+            g, input.data_ptr<T>(), weight.data_ptr<T>(), output.defined() ? output.data_ptr<T>() : nullptr,
+            indices.defined() ? indices.data_ptr<int32_t>() : nullptr, MorphoMergeCUDA<T>{merge}, MorphoBorderCUDA<T>{replicate, fill});
         C10_CUDA_KERNEL_LAUNCH_CHECK();
     });
 }
@@ -56,8 +61,10 @@ template <MORPHO_OPERATION op, typename T>
 void morpho_backward_indices_cuda(const MorphoGeometryCUDA& g, const at::Tensor& indices, const at::Tensor& grad_output, const at::Tensor& grad_input,
                                   const at::Tensor& grad_weight)
 {
+    // Shared bins for floats; doubles, whose shared atomics are 64 bit compare and swap loops, measured
+    // faster with global atomics.
     const size_t bins_bytes = static_cast<size_t>(g.in_channels) * g.taps() * sizeof(T);
-    const bool shared_bins = bins_bytes <= morpho_max_shared_memory();
+    const bool shared_bins = sizeof(T) == sizeof(float) && bins_bytes <= morpho_max_shared_memory();
     // A few blocks per SM, and enough pixels per block to amortise the flush of its bins.
     const int64_t sms = at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
     const int64_t plane = g.plane();
@@ -79,7 +86,7 @@ template <MORPHO_OPERATION op, typename T>
 void morpho_backward_cuda(const at::Tensor& input, const at::Tensor& weight, const at::Tensor& indices, const at::Tensor& grad_output,
                           const at::Tensor& grad_input, const at::Tensor& grad_weight, MORPHO_MERGE merge, bool replicate, T fill)
 {
-    const MorphoGeometryCUDA g = morpho_geometry_cuda(input.sizes(), weight.sizes());
+    MorphoGeometryCUDA g = morpho_geometry_cuda(input.sizes(), weight.sizes());
     if (static_cast<int64_t>(g.batch_size) * g.out_channels * g.plane() == 0)
     {
         return;
@@ -111,6 +118,7 @@ void morpho_backward_cuda(const at::Tensor& input, const at::Tensor& weight, con
         return count;
     };
     const auto shared_bytes = [&](int group) { return (g.window_size() + group * g.taps() * (1 + copies(group))) * sizeof(T); };
+    morpho_fit_block_rows(g, static_cast<int64_t>(g.batch_size) * g.in_channels);
     // Blocks own an input channel whatever the group size, so the larger group whenever it is useful and fits.
     const bool grouped = !doubles && merge != MORPHO_MERGE::IDENTITY && g.out_channels > 1 && shared_bytes(4) <= morpho_max_shared_memory();
     const int group = grouped ? 4 : 1;
@@ -121,7 +129,7 @@ void morpho_backward_cuda(const at::Tensor& input, const at::Tensor& weight, con
         constexpr int OB = decltype(group_constant)::value;
         const auto kernel = morpho_backward_pairs_kernel<op, T, OB>;
         morpho_allow_shared_memory(kernel, shared_bytes(OB));
-        kernel<<<morpho_tile_grid(g, g.in_channels), dim3(MORPHO_BLOCK_X, MORPHO_BLOCK_Y), shared_bytes(OB), at::cuda::getCurrentCUDAStream()>>>(
+        kernel<<<morpho_tile_grid(g, g.in_channels), morpho_tile_block(g), shared_bytes(OB), at::cuda::getCurrentCUDAStream()>>>(
             g, input.data_ptr<T>(), weight.data_ptr<T>(), grad_output.data_ptr<T>(), grad_input.data_ptr<T>(), grad_weight.data_ptr<T>(),
             MorphoMergeCUDA<T>{merge}, MorphoBorderCUDA<T>{replicate, fill}, copies(OB));
         C10_CUDA_KERNEL_LAUNCH_CHECK();

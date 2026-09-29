@@ -26,13 +26,20 @@ inline MorphoGeometryCUDA morpho_geometry_cuda(at::IntArrayRef input, at::IntArr
     g.kernel_width = static_cast<int>(weight[3]);
     g.pad_h = g.kernel_height / 2;
     g.pad_w = g.kernel_width / 2;
+    g.block_rows = MORPHO_BLOCK_Y;
     return g;
 }
 
 /// @brief Output tiles of one image plane.
 inline int64_t morpho_tiles(const MorphoGeometryCUDA& g)
 {
-    return static_cast<int64_t>((g.width + MORPHO_TILE_W - 1) / MORPHO_TILE_W) * ((g.height + MORPHO_TILE_H - 1) / MORPHO_TILE_H);
+    return static_cast<int64_t>((g.width + MORPHO_TILE_W - 1) / MORPHO_TILE_W) * ((g.height + g.tile_height() - 1) / g.tile_height());
+}
+
+/// @brief Blocks a launch should have to keep every SM busy.
+inline int64_t morpho_wanted_blocks()
+{
+    return 2 * static_cast<int64_t>(at::cuda::getCurrentDeviceProperties()->multiProcessorCount);
 }
 
 /// @brief Shared memory a block may use, opting in to more than the 48 KiB default when needed.
@@ -59,7 +66,7 @@ void morpho_allow_shared_memory(Kernel kernel, size_t bytes)
 template <typename SharedBytes>
 int morpho_channel_group(const MorphoGeometryCUDA& g, int channels, std::initializer_list<int> sizes, SharedBytes shared_bytes)
 {
-    const int64_t wanted_blocks = 2 * static_cast<int64_t>(at::cuda::getCurrentDeviceProperties()->multiProcessorCount);
+    const int64_t wanted_blocks = morpho_wanted_blocks();
     int chosen = 0;
     for (int size : sizes)
     {
@@ -77,6 +84,17 @@ int morpho_channel_group(const MorphoGeometryCUDA& g, int channels, std::initial
     return chosen;
 }
 
+/// @brief Shorter tiles for a problem too small to give every SM a couple of blocks: the halo of the
+///        taller tiles saves little there, and the idle SMs cost much more.
+/// @param planes Planes of tiles in the launch (batch times channels or channel groups).
+inline void morpho_fit_block_rows(MorphoGeometryCUDA& g, int64_t planes)
+{
+    while (g.block_rows > 1 && morpho_tiles(g) * planes < morpho_wanted_blocks())
+    {
+        g.block_rows /= 2;
+    }
+}
+
 /// @brief Call f with a channel group size as a compile time constant, among the compiled sizes.
 template <int... Sizes, typename F>
 void morpho_dispatch_group(int group, F f)
@@ -90,5 +108,11 @@ void morpho_dispatch_group(int group, F f)
 inline dim3 morpho_tile_grid(const MorphoGeometryCUDA& g, int groups)
 {
     const int64_t z = std::min<int64_t>(static_cast<int64_t>(g.batch_size) * groups, 65535);
-    return dim3((g.width + MORPHO_TILE_W - 1) / MORPHO_TILE_W, (g.height + MORPHO_TILE_H - 1) / MORPHO_TILE_H, static_cast<unsigned>(z));
+    return dim3((g.width + MORPHO_TILE_W - 1) / MORPHO_TILE_W, (g.height + g.tile_height() - 1) / g.tile_height(), static_cast<unsigned>(z));
+}
+
+/// @brief Threads of a tile kernel block.
+inline dim3 morpho_tile_block(const MorphoGeometryCUDA& g)
+{
+    return dim3(MORPHO_BLOCK_X, g.block_rows);
 }

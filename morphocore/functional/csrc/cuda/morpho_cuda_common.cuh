@@ -8,9 +8,9 @@
 
 // Building blocks shared by the CUDA kernels of the morphological operations and of Smorph.
 //
-// Every kernel works on output tiles. A block of MORPHO_BLOCK_X x MORPHO_BLOCK_Y threads computes a
-// tile of MORPHO_TILE_W x MORPHO_TILE_H output pixels, each thread a column of MORPHO_ROWS pixels,
-// for a group of OB output channels. Input channels are visited one at a time: the block copies the
+// Every kernel works on output tiles. A block of MORPHO_BLOCK_X x block_rows threads computes a tile
+// of MORPHO_TILE_W x (block_rows * MORPHO_ROWS) output pixels, each thread a column of MORPHO_ROWS
+// pixels, for a group of OB output channels. Input channels are visited one at a time: the block copies the
 // input window the tile reads (the tile plus its halo, border already resolved) into shared memory,
 // and every tap of every pixel of every output channel of the group then reads that copy. The inner
 // loops touch only shared memory and registers, and the input is never padded in global memory.
@@ -18,12 +18,12 @@
 // Tap (kh, kw) of output (h, w) reads input (h + pad_h - kh, w + pad_w - kw), as on the CPU.
 
 inline constexpr int MORPHO_BLOCK_X = 32;
+/// Rows of threads of the largest blocks; small problems use fewer, see morpho_fit_block_rows.
 inline constexpr int MORPHO_BLOCK_Y = 8;
 inline constexpr int MORPHO_THREADS = MORPHO_BLOCK_X * MORPHO_BLOCK_Y;
 /// Output rows per thread: a thread reuses each input value it reads for several pixels.
 inline constexpr int MORPHO_ROWS = 4;
 inline constexpr int MORPHO_TILE_W = MORPHO_BLOCK_X;
-inline constexpr int MORPHO_TILE_H = MORPHO_BLOCK_Y * MORPHO_ROWS;
 
 /// @brief Shapes of one operation, passed by value to the kernels.
 struct MorphoGeometryCUDA
@@ -36,15 +36,18 @@ struct MorphoGeometryCUDA
     int width;
     int kernel_height;
     int kernel_width;
-    int pad_h;  // kernel_height / 2
-    int pad_w;  // kernel_width / 2
+    int pad_h;       // kernel_height / 2
+    int pad_w;       // kernel_width / 2
+    int block_rows;  // Rows of threads of the tile kernels' blocks, at most MORPHO_BLOCK_Y.
 
     __host__ __device__ int taps() const { return kernel_height * kernel_width; }
 
     __host__ __device__ int64_t plane() const { return static_cast<int64_t>(height) * width; }
 
+    __host__ __device__ int tile_height() const { return block_rows * MORPHO_ROWS; }
+
     /// Input window of one output tile, see morpho_load_window.
-    __host__ __device__ int window_rows() const { return MORPHO_TILE_H + kernel_height - 1; }
+    __host__ __device__ int window_rows() const { return tile_height() + kernel_height - 1; }
 
     __host__ __device__ int window_cols() const { return MORPHO_TILE_W + kernel_width - 1; }
 
