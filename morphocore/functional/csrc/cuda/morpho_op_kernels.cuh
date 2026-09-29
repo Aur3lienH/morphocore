@@ -154,39 +154,21 @@ __device__ __forceinline__ void morpho_read_group(const T* __restrict__ source, 
     }
 }
 
-/// @brief Extremum over the structuring element for the MORPHO_ROWS pixels of this thread and G output
-///        channels of one input channel, without argmax: the forward inner loop.
-///        Each tap costs an addition and an extremum per (channel, pixel), so the loads and address
-///        arithmetic around them must stay few: the G weights of a tap are interleaved in shared
-///        memory and read with vector loads, and the loop over kw is unrolled so that the window
-///        offsets become immediates.
-/// @param window Input window, see morpho_copy_window_async.
-/// @param weights Structuring elements, [taps][G], see morpho_copy_weights_interleaved_async.
-template <MORPHO_OPERATION op, typename T, int G>
-__device__ __forceinline__ void morpho_window_extremum_interleaved(const MorphoGeometryCUDA& g, const T* __restrict__ window,
-                                                                   const T* __restrict__ weights, T (&best)[G][MORPHO_ROWS])
+/// @brief Taps of morpho_window_extremum_interleaved; KW is the kernel width when known at compile
+///        time, which unrolls the loop over kw entirely, 0 otherwise.
+template <MORPHO_OPERATION op, typename T, int G, int KW>
+__device__ __forceinline__ void morpho_window_taps(const MorphoGeometryCUDA& g, const T* __restrict__ origin, const T* __restrict__ weights,
+                                                   T (&best)[G][MORPHO_ROWS])
 {
     using Op = MorphoOpCUDA<op>;
     const int cols = g.window_cols();
-    // Window element read by tap (0, 0) of the first pixel of this thread.
-    const T* origin = window + (threadIdx.y * MORPHO_ROWS + g.kernel_height - 1) * cols + threadIdx.x + g.kernel_width - 1;
-
-#pragma unroll
-    for (int m = 0; m < G; m++)
-    {
-#pragma unroll
-        for (int r = 0; r < MORPHO_ROWS; r++)
-        {
-            best[m][r] = Op::template initial_value<T>();
-        }
-    }
-
+    const int kernel_width = KW > 0 ? KW : g.kernel_width;
     for (int kh = 0; kh < g.kernel_height; kh++)
     {
         const T* row = origin - kh * cols;
-        const T* tap_weights = weights + kh * g.kernel_width * G;
-#pragma unroll 4
-        for (int kw = 0; kw < g.kernel_width; kw++)
+        const T* tap_weights = weights + kh * kernel_width * G;
+#pragma unroll(KW > 0 ? KW : 4)
+        for (int kw = 0; kw < kernel_width; kw++)
         {
             T x[MORPHO_ROWS];
 #pragma unroll
@@ -206,6 +188,44 @@ __device__ __forceinline__ void morpho_window_extremum_interleaved(const MorphoG
                 }
             }
         }
+    }
+}
+
+/// @brief Extremum over the structuring element for the MORPHO_ROWS pixels of this thread and G output
+///        channels of one input channel, without argmax: the forward inner loop.
+///        Each tap costs an addition and an extremum per (channel, pixel), so the loads and address
+///        arithmetic around them must stay few: the G weights of a tap are interleaved in shared
+///        memory and read with vector loads, and the loop over kw is unrolled so that the window
+///        offsets become immediates.
+/// @param window Input window, see morpho_copy_window_async.
+/// @param weights Structuring elements, [taps][G], see morpho_copy_weights_interleaved_async.
+template <MORPHO_OPERATION op, typename T, int G>
+__device__ __forceinline__ void morpho_window_extremum_interleaved(const MorphoGeometryCUDA& g, const T* __restrict__ window,
+                                                                   const T* __restrict__ weights, T (&best)[G][MORPHO_ROWS])
+{
+    using Op = MorphoOpCUDA<op>;
+    // Window element read by tap (0, 0) of the first pixel of this thread.
+    const T* origin = window + (threadIdx.y * MORPHO_ROWS + g.kernel_height - 1) * g.window_cols() + threadIdx.x + g.kernel_width - 1;
+
+#pragma unroll
+    for (int m = 0; m < G; m++)
+    {
+#pragma unroll
+        for (int r = 0; r < MORPHO_ROWS; r++)
+        {
+            best[m][r] = Op::template initial_value<T>();
+        }
+    }
+
+    // The common widths get fully unrolled loops (about 5% faster than unrolling by 4 at 3x3 and 7x7):
+    // a uniform branch per channel, not more kernel instantiations. Single channel groups, whose few
+    // taps per load gain nothing from it, keep the generic loop.
+    switch (G > 1 ? g.kernel_width : 0)
+    {
+        case 3: morpho_window_taps<op, T, G, 3>(g, origin, weights, best); break;
+        case 5: morpho_window_taps<op, T, G, 5>(g, origin, weights, best); break;
+        case 7: morpho_window_taps<op, T, G, 7>(g, origin, weights, best); break;
+        default: morpho_window_taps<op, T, G, 0>(g, origin, weights, best); break;
     }
 }
 
