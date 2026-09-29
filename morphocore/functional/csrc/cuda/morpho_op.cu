@@ -105,12 +105,15 @@ void morpho_backward_cuda(const at::Tensor& input, const at::Tensor& weight, con
         return;
     }
 
-    // Floats: enough copies of the weight gradient bins to spread the lanes of a warp, within a small
-    // budget. Doubles: no shared bins (their shared atomics are 64 bit compare and swap loops), and
-    // groups of one channel, which hide the latency of the slow double units best; both measured.
+    // Enough copies of the weight gradient bins to spread the lanes of a warp, within a small budget.
+    // Doubles, whose shared atomics are 64 bit compare and swap loops, go to global memory instead when
+    // the weight gradient is large enough to spread the blocks' atomics (measured on 64 x 64 channels,
+    // while shared bins were up to 5x faster for small ones), and use groups of one channel, which
+    // hide the latency of the slow double units best.
     const bool doubles = sizeof(T) == sizeof(double);
+    const bool global_bins = doubles && static_cast<int64_t>(g.out_channels) * g.weight_in_channels * g.taps() >= 8192;
     const auto copies = [&](int group) {
-        int count = doubles ? 0 : 32;
+        int count = global_bins ? 0 : 32;
         while (count > 1 && group * g.taps() * count > 2048)
         {
             count /= 2;
