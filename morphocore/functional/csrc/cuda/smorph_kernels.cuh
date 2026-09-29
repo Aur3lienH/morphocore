@@ -310,7 +310,7 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
                           const T* __restrict__ beta, T* __restrict__ output, const T* __restrict__ target, T* __restrict__ stats,
                           const MORPHO_MERGE merge, const T winner_tolerance)
 {
-    extern __shared__ __align__(sizeof(double)) unsigned char morpho_shared[];
+    extern __shared__ __align__(16) unsigned char morpho_shared[];
     T* window = reinterpret_cast<T*>(morpho_shared);
     T* weights = window + g.window_size();
 
@@ -422,7 +422,7 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
                            T* __restrict__ grad_input, T* __restrict__ grad_weight, T* __restrict__ grad_alpha, T* __restrict__ grad_beta,
                            const MORPHO_MERGE merge, const T winner_tolerance)
 {
-    extern __shared__ __align__(sizeof(double)) unsigned char morpho_shared[];
+    extern __shared__ __align__(16) unsigned char morpho_shared[];
     const int window_size = g.window_size();
     const int taps = g.taps();
     T* window = reinterpret_cast<T*>(morpho_shared);

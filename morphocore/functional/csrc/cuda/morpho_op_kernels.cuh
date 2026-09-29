@@ -89,6 +89,126 @@ __device__ __forceinline__ void morpho_window_extremum(const MorphoGeometryCUDA&
     }
 }
 
+/// @brief Shared memory of the forward kernel: `buffers` stages of one input channel, each the input
+///        window followed by the weights of the G output channels, both 16 byte aligned so that the
+///        weights of a tap can be read with vector loads.
+template <typename T>
+struct MorphoForwardStageCUDA
+{
+    static constexpr int per_vector = 16 / sizeof(T);
+
+    __host__ __device__ static int align(int n) { return (n + per_vector - 1) / per_vector * per_vector; }
+
+    /// Offset of the weights in a stage, in elements.
+    __host__ __device__ static int weights_offset(const MorphoGeometryCUDA& g) { return align(g.window_size()); }
+
+    /// Elements of a stage.
+    __host__ __device__ static int size(const MorphoGeometryCUDA& g, int group) { return align(weights_offset(g) + group * g.taps()); }
+};
+
+/// @brief Start copying the structuring elements of G output channels into shared memory, interleaved
+///        as [taps][G] so that the forward kernel reads the G weights of a tap with a few 16 byte
+///        loads; members past `valid` are zeros. Member m starts at first + m * member_stride.
+///        Asynchronous, as morpho_copy_window_async.
+template <typename T, int G>
+__device__ __forceinline__ void morpho_copy_weights_interleaved_async(const T* __restrict__ first, int64_t member_stride, int valid, int taps,
+                                                                      T* __restrict__ weights)
+{
+    // Consecutive threads read consecutive taps of a member, so the global loads are coalesced.
+    for (int i = threadIdx.y * blockDim.x + threadIdx.x; i < G * taps; i += blockDim.x * blockDim.y)
+    {
+        const int m = i / taps;
+        const int k = i - m * taps;
+        if (m < valid)
+        {
+            __pipeline_memcpy_async(weights + k * G + m, first + m * member_stride + k, sizeof(T));
+        }
+        else
+        {
+            weights[k * G + m] = static_cast<T>(0);
+        }
+    }
+}
+
+/// @brief Read G consecutive values from shared memory, with 16 byte loads when they fill whole vectors.
+template <typename T, int G>
+__device__ __forceinline__ void morpho_read_group(const T* __restrict__ source, T (&values)[G])
+{
+    constexpr int per_vector = 16 / sizeof(T);
+    if constexpr (G % per_vector == 0)
+    {
+#pragma unroll
+        for (int i = 0; i < G / per_vector; i++)
+        {
+            const float4 vector = reinterpret_cast<const float4*>(source)[i];
+            memcpy(values + i * per_vector, &vector, sizeof(vector));
+        }
+    }
+    else
+    {
+#pragma unroll
+        for (int i = 0; i < G; i++)
+        {
+            values[i] = source[i];
+        }
+    }
+}
+
+/// @brief Extremum over the structuring element for the MORPHO_ROWS pixels of this thread and G output
+///        channels of one input channel, without argmax: the forward inner loop.
+///        Each tap costs an addition and an extremum per (channel, pixel), so the loads and address
+///        arithmetic around them must stay few: the G weights of a tap are interleaved in shared
+///        memory and read with vector loads, and the loop over kw is unrolled so that the window
+///        offsets become immediates.
+/// @param window Input window, see morpho_copy_window_async.
+/// @param weights Structuring elements, [taps][G], see morpho_copy_weights_interleaved_async.
+template <MORPHO_OPERATION op, typename T, int G>
+__device__ __forceinline__ void morpho_window_extremum_interleaved(const MorphoGeometryCUDA& g, const T* __restrict__ window,
+                                                                   const T* __restrict__ weights, T (&best)[G][MORPHO_ROWS])
+{
+    using Op = MorphoOpCUDA<op>;
+    const int cols = g.window_cols();
+    // Window element read by tap (0, 0) of the first pixel of this thread.
+    const T* origin = window + (threadIdx.y * MORPHO_ROWS + g.kernel_height - 1) * cols + threadIdx.x + g.kernel_width - 1;
+
+#pragma unroll
+    for (int m = 0; m < G; m++)
+    {
+#pragma unroll
+        for (int r = 0; r < MORPHO_ROWS; r++)
+        {
+            best[m][r] = Op::template initial_value<T>();
+        }
+    }
+
+    for (int kh = 0; kh < g.kernel_height; kh++)
+    {
+        const T* row = origin - kh * cols;
+        const T* tap_weights = weights + kh * g.kernel_width * G;
+#pragma unroll 4
+        for (int kw = 0; kw < g.kernel_width; kw++)
+        {
+            T x[MORPHO_ROWS];
+#pragma unroll
+            for (int r = 0; r < MORPHO_ROWS; r++)
+            {
+                x[r] = row[r * cols - kw];
+            }
+            T w[G];
+            morpho_read_group(tap_weights + kw * G, w);
+#pragma unroll
+            for (int m = 0; m < G; m++)
+            {
+#pragma unroll
+                for (int r = 0; r < MORPHO_ROWS; r++)
+                {
+                    best[m][r] = Op::extremum(best[m][r], Op::combine(x[r], w[m]));
+                }
+            }
+        }
+    }
+}
+
 /// @brief First tap of a channel pair whose value is target, as tracked by the CPU argmax; 0 when none
 ///        is (every tap then reads the neutral element, and the CPU keeps tap 0 too). A row of taps is
 ///        read without early exit so that its loads are independent.
@@ -146,13 +266,16 @@ enum class MorphoIndexMode
 
 /// @brief Forward tile kernel, every merge; a block computes OB output channels.
 template <MORPHO_OPERATION op, typename T, int OB, MorphoIndexMode index_mode>
-__global__ void __launch_bounds__(MORPHO_THREADS)
+// Two blocks per SM with groups of channels, four without: left free, the unrolled tap loops take more
+// registers than that for their loads in flight, and the lost blocks cost more than they gain.
+__global__ void __launch_bounds__(MORPHO_THREADS, OB > 1 ? 2 : 4)
     morpho_forward_kernel(const MorphoGeometryCUDA g, const T* __restrict__ input, const T* __restrict__ weight, T* __restrict__ output,
-                          int32_t* __restrict__ indices, const MorphoMergeCUDA<T> m, const MorphoBorderCUDA<T> border)
+                          int32_t* __restrict__ indices, const MorphoMergeCUDA<T> m, const MorphoBorderCUDA<T> border, int buffers)
 {
-    extern __shared__ __align__(sizeof(double)) unsigned char morpho_shared[];
+    using Stage = MorphoForwardStageCUDA<T>;
+    extern __shared__ __align__(16) unsigned char morpho_shared[];
     T* window = reinterpret_cast<T*>(morpho_shared);
-    T* weights = window + g.window_size();
+    T* weights = window + Stage::weights_offset(g);
 
     const bool identity = m.merge == MORPHO_MERGE::IDENTITY;
     const int groups = (g.out_channels + OB - 1) / OB;
@@ -204,17 +327,30 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
             }
         }
 
+        // Input channel c goes to stage (c - c_begin) % buffers. With two stages, the copy of the next
+        // channel runs while the block computes the current one, which hides the global latency.
+        const auto stage_channel = [&](int c, int stage) {
+            T* stage_window = window + stage * Stage::size(g, OB);
+            morpho_copy_window_async(g, input + (static_cast<int64_t>(b) * g.in_channels + c) * g.plane(), h0, w0, border, stage_window);
+            morpho_copy_weights_interleaved_async<T, OB>(weight + (static_cast<int64_t>(o0) * g.weight_in_channels + (identity ? 0 : c)) * g.taps(),
+                                                         static_cast<int64_t>(g.weight_in_channels) * g.taps(), g.out_channels - o0, g.taps(),
+                                                         stage_window + Stage::weights_offset(g));
+            __pipeline_commit();
+        };
+        __syncthreads();  // The previous group is no longer read.
+        stage_channel(c_begin, 0);
         for (int c = c_begin; c < c_end; c++)
         {
-            __syncthreads();  // The previous channel is no longer read.
-            morpho_load_window(g, input + (static_cast<int64_t>(b) * g.in_channels + c) * g.plane(), h0, w0, border, window);
-            morpho_load_weights<T, OB>(weight + (static_cast<int64_t>(o0) * g.weight_in_channels + (identity ? 0 : c)) * g.taps(),
-                                       static_cast<int64_t>(g.weight_in_channels) * g.taps(), g.out_channels - o0, g.taps(), weights);
-            __syncthreads();
+            const int stage = (c - c_begin) & (buffers - 1);
+            __pipeline_wait_prior(0);
+            __syncthreads();  // Channel c is in shared memory, and channel c - 1 is no longer read.
+            if (buffers > 1 && c + 1 < c_end)
+            {
+                stage_channel(c + 1, stage ^ 1);
+            }
 
             T best[OB][MORPHO_ROWS];
-            int unused[OB][MORPHO_ROWS];
-            morpho_window_extremum<op, T, OB, true, false>(g, window, weights, best, unused);
+            morpho_window_extremum_interleaved<op, T, OB>(g, window + stage * Stage::size(g, OB), weights + stage * Stage::size(g, OB), best);
 #pragma unroll
             for (int ob = 0; ob < OB; ob++)
             {
@@ -227,6 +363,11 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
                     }
                     merged[ob][r] = m.merge_value(merged[ob][r], best[ob][r]);
                 }
+            }
+            if (buffers == 1 && c + 1 < c_end)
+            {
+                __syncthreads();  // Channel c is no longer read.
+                stage_channel(c + 1, 0);
             }
         }
 
@@ -272,7 +413,7 @@ __global__ void __launch_bounds__(MORPHO_THREADS, OB > 1 ? 3 : 4)
                                  const MorphoMergeCUDA<T> m, const MorphoBorderCUDA<T> border, int copies)
 {
     using Op = MorphoOpCUDA<op>;
-    extern __shared__ __align__(sizeof(double)) unsigned char morpho_shared[];
+    extern __shared__ __align__(16) unsigned char morpho_shared[];
     const int window_size = g.window_size();
     const int taps = g.taps();
     T* window = reinterpret_cast<T*>(morpho_shared);
@@ -390,7 +531,7 @@ __global__ void __launch_bounds__(MORPHO_THREADS)
                                    T* __restrict__ grad_input, T* __restrict__ grad_weight, int pixels_per_block, bool shared_bins)
 {
     using Op = MorphoOpCUDA<op>;
-    extern __shared__ __align__(sizeof(double)) unsigned char morpho_shared[];
+    extern __shared__ __align__(16) unsigned char morpho_shared[];
     T* bins = reinterpret_cast<T*>(morpho_shared);
 
     const int o = blockIdx.y;

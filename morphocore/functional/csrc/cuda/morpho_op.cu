@@ -40,7 +40,15 @@ void morpho_forward_cuda(const at::Tensor& input, const at::Tensor& weight, cons
     TORCH_CHECK(!indices.defined() || (g.taps() < (1 << 16) && g.in_channels < (1 << 15)),
                 "Structuring element or channel count too large to save indices");
 
-    const auto shared_bytes = [&](int group) { return (g.window_size() + group * g.taps()) * sizeof(T); };
+    const bool single_channel = merge == MORPHO_MERGE::IDENTITY || g.in_channels == 1;
+    const MorphoIndexMode index_mode = !indices.defined() ? MorphoIndexMode::NONE : single_channel ? MorphoIndexMode::TRACK : MorphoIndexMode::SEARCH;
+    // Two stages let the copy of the next input channel overlap the computation of the current one;
+    // one when they do not fit, or when a block visits a single input channel.
+    const auto buffers = [&](int group) {
+        const size_t two = 2 * MorphoForwardStageCUDA<T>::size(g, group) * sizeof(T);
+        return !single_channel && two <= morpho_max_shared_memory() ? 2 : 1;
+    };
+    const auto shared_bytes = [&](int group) { return buffers(group) * MorphoForwardStageCUDA<T>::size(g, group) * sizeof(T); };
     const bool doubles = sizeof(T) == sizeof(double);
     // The group only has to give each SM a block, and the shorter tiles of morpho_fit_block_rows add
     // the rest: sharing each input window between more output channels measured worth more than the
@@ -51,9 +59,6 @@ void morpho_forward_cuda(const at::Tensor& input, const at::Tensor& weight, cons
                           : morpho_channel_group(g, g.out_channels, doubles ? std::initializer_list<int>{1} : std::initializer_list<int>{8, 4, 1},
                                                  shared_bytes, morpho_sms());
     morpho_fit_block_rows(g, static_cast<int64_t>(g.batch_size) * ((g.out_channels + group - 1) / group));
-    const MorphoIndexMode index_mode = !indices.defined()                                      ? MorphoIndexMode::NONE
-                                       : merge == MORPHO_MERGE::IDENTITY || g.in_channels == 1 ? MorphoIndexMode::TRACK
-                                                                                               : MorphoIndexMode::SEARCH;
 
     morpho_dispatch_output_group<T>(group, [&](auto group_constant) {
         constexpr int OB = decltype(group_constant)::value;
@@ -63,7 +68,7 @@ void morpho_forward_cuda(const at::Tensor& input, const at::Tensor& weight, cons
         morpho_allow_shared_memory(kernel, shared_bytes(OB));
         kernel<<<morpho_tile_grid(g, (g.out_channels + OB - 1) / OB), morpho_tile_block(g), shared_bytes(OB), at::cuda::getCurrentCUDAStream()>>>(
             g, input.data_ptr<T>(), weight.data_ptr<T>(), output.defined() ? output.data_ptr<T>() : nullptr,
-            indices.defined() ? indices.data_ptr<int32_t>() : nullptr, MorphoMergeCUDA<T>{merge}, MorphoBorderCUDA<T>{replicate, fill});
+            indices.defined() ? indices.data_ptr<int32_t>() : nullptr, MorphoMergeCUDA<T>{merge}, MorphoBorderCUDA<T>{replicate, fill}, buffers(OB));
         C10_CUDA_KERNEL_LAUNCH_CHECK();
     });
 }

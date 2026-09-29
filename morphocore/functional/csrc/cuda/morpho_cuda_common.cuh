@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <limits>
 
+#include <cuda_pipeline.h>
 #include <cuda_runtime.h>
 
 #include "../cpp/morpho_op_enum.hpp"
@@ -93,6 +94,44 @@ __device__ __forceinline__ void morpho_load_window(const MorphoGeometryCUDA& g, 
             }
             window[r * cols + c] = value;
         }
+    }
+}
+
+/// @brief Start copying the input window of the output tile starting at (h0, w0) into shared memory,
+///        as morpho_load_window, with asynchronous copies that the caller commits and waits for
+///        (__pipeline_commit, __pipeline_wait_prior): the block can compute meanwhile. GPUs without
+///        asynchronous copies (before sm_80) copy synchronously.
+template <typename T>
+__device__ __forceinline__ void morpho_copy_window_async(const MorphoGeometryCUDA& g, const T* __restrict__ plane, int h0, int w0,
+                                                         MorphoBorderCUDA<T> border, T* __restrict__ window)
+{
+    const int cols = g.window_cols();
+    const int size = g.window_size();
+    const int threads = blockDim.x * blockDim.y;
+    const int y0 = h0 + g.pad_h - (g.kernel_height - 1);
+    const int x0 = w0 + g.pad_w - (g.kernel_width - 1);
+    // Window row and column of element i, updated incrementally as i advances by threads.
+    const int first = threadIdx.y * blockDim.x + threadIdx.x;
+    int r = first / cols;
+    int c = first - r * cols;
+    const int step_r = threads / cols;
+    const int step_c = threads - step_r * cols;
+    for (int i = first; i < size; i += threads)
+    {
+        const int y = y0 + r;
+        const int x = x0 + c;
+        if (border.replicate || (y >= 0 && y < g.height && x >= 0 && x < g.width))
+        {
+            __pipeline_memcpy_async(window + i, plane + static_cast<int64_t>(min(max(y, 0), g.height - 1)) * g.width + min(max(x, 0), g.width - 1),
+                                    sizeof(T));
+        }
+        else
+        {
+            window[i] = border.fill;
+        }
+        c += step_c;
+        r += step_r + (c >= cols);
+        c -= c >= cols ? cols : 0;
     }
 }
 
