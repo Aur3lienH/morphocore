@@ -4,15 +4,18 @@
 
 // Launchers of the CUDA dilation and erosion kernels (morpho_op_kernels.cuh).
 
-/// @brief Output channel group sizes compiled for the tile kernels of an element type. Doubles run at
-///        a small fraction of the float rate on most GPUs and gain nothing from the larger groups,
-///        whose register use also halves occupancy.
+// Doubles run at a small fraction of the float rate on most GPUs, and their threads take twice the
+// registers: they gain nothing from sharing windows between output channels, and are faster with
+// more, smaller blocks. On an A40 the forward with groups of 4 channels measured up to 6% slower
+// than with single channels, and blocks of half height 2% to 8% faster, forward and backward.
+
+/// @brief Output channel group sizes compiled for the forward kernel of an element type.
 template <typename T, typename F>
 void morpho_dispatch_output_group(int group, F f)
 {
     if constexpr (sizeof(T) == sizeof(double))
     {
-        morpho_dispatch_group<4, 1>(group, f);
+        morpho_dispatch_group<1>(group, f);
     }
     else
     {
@@ -20,11 +23,16 @@ void morpho_dispatch_output_group(int group, F f)
     }
 }
 
+/// @brief Rows of threads of the tile kernels' blocks before morpho_fit_block_rows.
+template <typename T>
+inline constexpr int MORPHO_BLOCK_ROWS = sizeof(T) == sizeof(double) ? MORPHO_BLOCK_Y / 2 : MORPHO_BLOCK_Y;
+
 template <MORPHO_OPERATION op, typename T>
 void morpho_forward_cuda(const at::Tensor& input, const at::Tensor& weight, const at::Tensor& output, const at::Tensor& indices, MORPHO_MERGE merge,
                          bool replicate, T fill)
 {
     MorphoGeometryCUDA g = morpho_geometry_cuda(input.sizes(), weight.sizes());
+    g.block_rows = MORPHO_BLOCK_ROWS<T>;
     if (static_cast<int64_t>(g.batch_size) * g.out_channels * g.plane() == 0)
     {
         return;
@@ -37,7 +45,7 @@ void morpho_forward_cuda(const at::Tensor& input, const at::Tensor& weight, cons
     const int group =
         merge == MORPHO_MERGE::IDENTITY
             ? morpho_channel_group(g, 1, {1}, shared_bytes)
-            : morpho_channel_group(g, g.out_channels, doubles ? std::initializer_list<int>{4, 1} : std::initializer_list<int>{8, 4, 1}, shared_bytes);
+            : morpho_channel_group(g, g.out_channels, doubles ? std::initializer_list<int>{1} : std::initializer_list<int>{8, 4, 1}, shared_bytes);
     morpho_fit_block_rows(g, static_cast<int64_t>(g.batch_size) * ((g.out_channels + group - 1) / group));
     const MorphoIndexMode index_mode = !indices.defined()                                      ? MorphoIndexMode::NONE
                                        : merge == MORPHO_MERGE::IDENTITY || g.in_channels == 1 ? MorphoIndexMode::TRACK
@@ -124,6 +132,7 @@ void morpho_backward_cuda(const at::Tensor& input, const at::Tensor& weight, con
         return count;
     };
     const auto shared_bytes = [&](int group) { return (g.window_size() + group * g.taps() * (1 + copies(group))) * sizeof(T); };
+    g.block_rows = MORPHO_BLOCK_ROWS<T>;
     morpho_fit_block_rows(g, static_cast<int64_t>(g.batch_size) * g.in_channels);
     // Blocks own an input channel whatever the group size, so the larger group whenever it is useful and fits.
     const bool grouped = !doubles && merge != MORPHO_MERGE::IDENTITY && g.out_channels > 1 && shared_bytes(4) <= morpho_max_shared_memory();
