@@ -36,10 +36,16 @@ inline int64_t morpho_tiles(const MorphoGeometryCUDA& g)
     return static_cast<int64_t>((g.width + MORPHO_TILE_W - 1) / MORPHO_TILE_W) * ((g.height + g.tile_height() - 1) / g.tile_height());
 }
 
+/// @brief Streaming multiprocessors of the current device.
+inline int64_t morpho_sms()
+{
+    return at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
+}
+
 /// @brief Blocks a launch should have to keep every SM busy.
 inline int64_t morpho_wanted_blocks()
 {
-    return 2 * static_cast<int64_t>(at::cuda::getCurrentDeviceProperties()->multiProcessorCount);
+    return 2 * morpho_sms();
 }
 
 /// @brief Zero a contiguous tensor with a memset, which costs the host much less than a fill kernel
@@ -68,15 +74,15 @@ void morpho_allow_shared_memory(Kernel kernel, size_t bytes)
 }
 
 /// @brief Largest channel group, among the compiled sizes, that fits in shared memory and still gives
-///        every SM a couple of blocks: larger groups reuse each shared window more, but a small
-///        problem needs the blocks.
+///        the launch `wanted_blocks` blocks of full height tiles: larger groups reuse each shared
+///        window more, but a small problem needs the blocks.
 /// @param channels Channels split in groups.
 /// @param sizes Compiled group sizes, decreasing.
 /// @param shared_bytes Shared memory of a block for a group size.
 template <typename SharedBytes>
-int morpho_channel_group(const MorphoGeometryCUDA& g, int channels, std::initializer_list<int> sizes, SharedBytes shared_bytes)
+int morpho_channel_group(const MorphoGeometryCUDA& g, int channels, std::initializer_list<int> sizes, SharedBytes shared_bytes,
+                         int64_t wanted_blocks = morpho_wanted_blocks())
 {
-    const int64_t wanted_blocks = morpho_wanted_blocks();
     int chosen = 0;
     for (int size : sizes)
     {

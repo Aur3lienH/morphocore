@@ -42,10 +42,14 @@ void morpho_forward_cuda(const at::Tensor& input, const at::Tensor& weight, cons
 
     const auto shared_bytes = [&](int group) { return (g.window_size() + group * g.taps()) * sizeof(T); };
     const bool doubles = sizeof(T) == sizeof(double);
-    const int group =
-        merge == MORPHO_MERGE::IDENTITY
-            ? morpho_channel_group(g, 1, {1}, shared_bytes)
-            : morpho_channel_group(g, g.out_channels, doubles ? std::initializer_list<int>{1} : std::initializer_list<int>{8, 4, 1}, shared_bytes);
+    // The group only has to give each SM a block, and the shorter tiles of morpho_fit_block_rows add
+    // the rest: sharing each input window between more output channels measured worth more than the
+    // blocks. On an A40, 4x8x128x128 to 8 channels, k = 7, runs in 91 us with groups of 4 (256
+    // blocks of half height tiles) instead of 161 us with single channels (512 blocks).
+    const int group = merge == MORPHO_MERGE::IDENTITY
+                          ? morpho_channel_group(g, 1, {1}, shared_bytes)
+                          : morpho_channel_group(g, g.out_channels, doubles ? std::initializer_list<int>{1} : std::initializer_list<int>{8, 4, 1},
+                                                 shared_bytes, morpho_sms());
     morpho_fit_block_rows(g, static_cast<int64_t>(g.batch_size) * ((g.out_channels + group - 1) / group));
     const MorphoIndexMode index_mode = !indices.defined()                                      ? MorphoIndexMode::NONE
                                        : merge == MORPHO_MERGE::IDENTITY || g.in_channels == 1 ? MorphoIndexMode::TRACK
