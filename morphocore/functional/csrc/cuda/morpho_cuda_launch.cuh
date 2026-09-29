@@ -42,6 +42,16 @@ inline int64_t morpho_wanted_blocks()
     return 2 * static_cast<int64_t>(at::cuda::getCurrentDeviceProperties()->multiProcessorCount);
 }
 
+/// @brief Zero a contiguous tensor with a memset, which costs the host much less than a fill kernel
+///        dispatched through ATen: that matters for small problems, bound by the host.
+inline void morpho_zero(const at::Tensor& tensor)
+{
+    if (tensor.numel() > 0)
+    {
+        C10_CUDA_CHECK(cudaMemsetAsync(tensor.data_ptr(), 0, tensor.nbytes(), at::cuda::getCurrentCUDAStream()));
+    }
+}
+
 /// @brief Shared memory a block may use, opting in to more than the 48 KiB default when needed.
 inline size_t morpho_max_shared_memory()
 {

@@ -67,11 +67,15 @@ torch::Tensor MorphoOperation<Op, merge, kind>::forward(torch::autograd::Autogra
 
         // Every output element is written by the kernel, and the border is resolved in the kernel too.
         output = torch::empty({batch_size, out_channels, height, width}, input_correct_dims.options());
-        max_indices = torch::empty({should_save_indices ? batch_size : 0, out_channels, height, width}, input.options().dtype(torch::kInt));
+        // Left undefined when not saved: an empty tensor would still cost an allocation per call.
+        if (should_save_indices)
+        {
+            max_indices = torch::empty({batch_size, out_channels, height, width}, input.options().dtype(torch::kInt));
+        }
 
         AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), "morpho_operation_forward_cuda", [&] {
-            morpho_forward_cuda<Op, scalar_t>(input_correct_dims, weight_correct_dims, output, should_save_indices ? max_indices : torch::Tensor(),
-                                              merge, kind == MORPHO_PADDING_KIND::REPLICATE, morpho_fill_value<Op, scalar_t>(padding, padding_value));
+            morpho_forward_cuda<Op, scalar_t>(input_correct_dims, weight_correct_dims, output, max_indices, merge,
+                                              kind == MORPHO_PADDING_KIND::REPLICATE, morpho_fill_value<Op, scalar_t>(padding, padding_value));
         });
 
 #else
@@ -128,7 +132,7 @@ torch::autograd::tensor_list MorphoOperation<Op, merge, kind>::backward(torch::a
     grad_output = grad_output.contiguous();
     torch::Tensor grad_input;
     torch::Tensor grad_weight;
-    bool indices_were_saved = max_indices.numel() > 0;
+    bool indices_were_saved = max_indices.defined() && max_indices.numel() > 0;
 
     std::vector<int64_t> expected_grad_shape = input.sizes().vec();
     expected_grad_shape[1] = weight.sizes()[0];
@@ -143,9 +147,9 @@ torch::autograd::tensor_list MorphoOperation<Op, merge, kind>::backward(torch::a
     {
 #ifdef WITH_CUDA
         const c10::cuda::CUDAGuard device_guard(input.device());
-        // The kernels accumulate into the gradients.
-        grad_input = torch::zeros_like(input);
-        grad_weight = torch::zeros_like(weight);
+        // Zeroed by morpho_backward_cuda, into which the kernels accumulate.
+        grad_input = torch::empty_like(input);
+        grad_weight = torch::empty_like(weight);
 
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_operation_backward_cuda", [&] {
             morpho_backward_cuda<Op, scalar_t>(input, weight, indices_were_saved ? max_indices : torch::Tensor(), grad_output, grad_input,

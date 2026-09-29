@@ -86,6 +86,9 @@ template <MORPHO_OPERATION op, typename T>
 void morpho_backward_cuda(const at::Tensor& input, const at::Tensor& weight, const at::Tensor& indices, const at::Tensor& grad_output,
                           const at::Tensor& grad_input, const at::Tensor& grad_weight, MORPHO_MERGE merge, bool replicate, T fill)
 {
+    // The kernels accumulate into the gradients.
+    morpho_zero(grad_input);
+    morpho_zero(grad_weight);
     MorphoGeometryCUDA g = morpho_geometry_cuda(input.sizes(), weight.sizes());
     if (static_cast<int64_t>(g.batch_size) * g.out_channels * g.plane() == 0)
     {
