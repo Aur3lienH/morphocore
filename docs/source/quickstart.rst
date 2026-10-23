@@ -68,20 +68,20 @@ Closing fills small holes (dilation followed by erosion):
 Advanced Operations
 -------------------
 
-EMorph (Exact Interpolation)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+SigmaLayer (Exact Interpolation)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-EMorph provides exact interpolation between erosion and dilation:
+SigmaLayer provides exact interpolation between erosion and dilation:
 
 .. code-block:: python
 
-   from morphocore.nn import EMorph
+   from morphocore.nn import SigmaLayer
 
-   # Create EMorph layer with learnable alpha
-   emorph = EMorph(in_channels=3, out_channels=16, kernel_size=5, init_alpha=0.0)
+   # Create a SigmaLayer with learnable alpha
+   sigma_layer = SigmaLayer(in_channels=3, out_channels=16, kernel_size=5, init_alpha=0.0)
    
    x = torch.randn(1, 3, 32, 32)
-   output = emorph(x)
+   output = sigma_layer(x)
    
    # Alpha can be learned during training
    # When alpha → +∞: operation → dilation
@@ -111,20 +111,20 @@ Here's a complete example of training a network with morphological layers:
 
    import torch
    import torch.nn as nn
-   from morphocore.nn import Dilation, Erosion, EMorph
+   from morphocore.nn import Dilation, Erosion, SigmaLayer
 
    class MorphoNet(nn.Module):
        def __init__(self):
            super().__init__()
            self.dilation = Dilation(3, 16, kernel_size=5)
            self.erosion = Erosion(16, 16, kernel_size=5)
-           self.emorph = EMorph(16, 8, kernel_size=3, init_alpha=0.0)
+           self.sigma_layer = SigmaLayer(16, 8, kernel_size=3, init_alpha=0.0)
            self.conv = nn.Conv2d(8, 10, kernel_size=1)
        
        def forward(self, x):
            x = self.dilation(x)
            x = self.erosion(x)
-           x = self.emorph(x)
+           x = self.sigma_layer(x)
            x = self.conv(x)
            return x
 
@@ -157,7 +157,7 @@ For more control, use the functional API:
 
 .. code-block:: python
 
-   from morphocore.functional import dilation, erosion, emorph
+   from morphocore.functional import dilation, erosion, sigma_layer
 
    # Define structuring elements
    w = torch.ones(16, 3, 5, 5)
@@ -167,7 +167,7 @@ For more control, use the functional API:
    x = torch.randn(1, 3, 32, 32)
    dilated = dilation(x, w)
    eroded = erosion(x, w)
-   interpolated = emorph(x, w, alpha)
+   interpolated = sigma_layer(x, w, alpha)
 
 Channel Merge Modes
 -------------------

@@ -22,7 +22,7 @@ Morphocore implements the fundamental morphological operations:
 
 * **Dilation** (⊕): Expands bright regions
 * **Erosion** (⊖): Shrinks bright regions  
-* **EMorph**: Exact interpolation between erosion and dilation
+* **SigmaLayer**: Exact interpolation between erosion and dilation
 * **SMorph**: Smooth approximation for better gradient flow
 
 Quick Start

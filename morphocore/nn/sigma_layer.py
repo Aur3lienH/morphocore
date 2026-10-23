@@ -1,10 +1,10 @@
 import torch
 from torch import nn
 from .alpha_module import AlphaModule
-from morphocore.functional import emorph
+from morphocore.functional import sigma_layer
 
 
-class EMorph(AlphaModule):
+class SigmaLayer(AlphaModule):
     """
     Learnable morphological layer with exact interpolation between erosion and dilation.
     
@@ -59,8 +59,8 @@ class EMorph(AlphaModule):
     Examples
     --------
     >>> import torch
-    >>> from morphocore.nn import EMorph
-    >>> layer = EMorph(in_channels=3, out_channels=16, kernel_size=5)
+    >>> from morphocore.nn import SigmaLayer
+    >>> layer = SigmaLayer(in_channels=3, out_channels=16, kernel_size=5)
     >>> x = torch.randn(1, 3, 32, 32)
     >>> output = layer(x)
     >>> output.shape
@@ -68,7 +68,7 @@ class EMorph(AlphaModule):
     
     Training example with alpha learning:
     
-    >>> layer = EMorph(3, 16, kernel_size=5, init_alpha=0.0)
+    >>> layer = SigmaLayer(3, 16, kernel_size=5, init_alpha=0.0)
     >>> optimizer = torch.optim.Adam(layer.parameters(), lr=0.001)
     >>> x = torch.randn(8, 3, 32, 32)
     >>> output = layer(x)
@@ -79,7 +79,7 @@ class EMorph(AlphaModule):
 
     See Also
     --------
-    morphocore.functional.emorph : Functional interface
+    morphocore.functional.sigma_layer : Functional interface
     SMorph : Smooth morphological layer
     Dilation : Standard dilation layer
     Erosion : Standard erosion layer
@@ -95,6 +95,6 @@ class EMorph(AlphaModule):
         self.weight_dropout = weight_dropout
 
     def forward(self, x):
-        return emorph(x, self.weight, self.alpha, self.channel_merge_mode, padding_mode=self.padding_mode,
+        return sigma_layer(x, self.weight, self.alpha, self.channel_merge_mode, padding_mode=self.padding_mode,
                       save_indices=self.save_indices, padding_value=self.padding_value,
                       weight_dropout=self.weight_dropout, training=self.training)

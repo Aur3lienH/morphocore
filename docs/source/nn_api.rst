@@ -48,10 +48,10 @@ Closing Layer
 Exact Interpolation Layers
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-EMorph Layer
-""""""""""""
+SigmaLayer
+""""""""""
 
-.. autoclass:: morphocore.nn.EMorph
+.. autoclass:: morphocore.nn.SigmaLayer
    :members:
    :special-members: __init__
    :show-inheritance:

@@ -44,10 +44,10 @@ Closing
 Exact Interpolation
 ^^^^^^^^^^^^^^^^^^^
 
-EMorph
-""""""
+SigmaLayer
+""""""""""
 
-.. autofunction:: morphocore.functional.emorph
+.. autofunction:: morphocore.functional.sigma_layer
    :no-index:
 
 Smooth Approximation
@@ -111,10 +111,10 @@ Closing Layer
 Exact Interpolation Layers
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-EMorph Layer
-""""""""""""
+SigmaLayer
+""""""""""
 
-.. autoclass:: morphocore.nn.EMorph
+.. autoclass:: morphocore.nn.SigmaLayer
    :members:
    :special-members: __init__
    :show-inheritance:

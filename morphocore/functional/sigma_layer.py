@@ -4,7 +4,7 @@ from torch.functional import F
 from morphocore.functional import dilation
 from morphocore.functional import erosion
 
-def emorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'replicate', save_indices: bool = True, padding_value: float = 0.0, weight_dropout: float = 0.0, training: bool = False) -> torch.Tensor:
+def sigma_layer(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'replicate', save_indices: bool = True, padding_value: float = 0.0, weight_dropout: float = 0.0, training: bool = False) -> torch.Tensor:
     """
     Apply morphological interpolation between erosion and dilation.
     
@@ -58,11 +58,11 @@ def emorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_
     Examples
     --------
     >>> import torch
-    >>> from morphocore.functional import emorph
+    >>> from morphocore.functional import sigma_layer
     >>> x = torch.randn(1, 3, 32, 32)
     >>> w = torch.ones(3, 3, 5, 5)
     >>> alpha = torch.zeros(3, 3)  # Balanced between erosion and dilation
-    >>> output = emorph(x, w, alpha)
+    >>> output = sigma_layer(x, w, alpha)
     >>> output.shape
     torch.Size([1, 3, 32, 32])
     """

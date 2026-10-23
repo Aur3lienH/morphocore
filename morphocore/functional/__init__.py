@@ -2,7 +2,7 @@ from .dilation import dilation
 from .erosion import erosion
 from .opening import opening
 from .closing import closing
-from .emorph import emorph
+from .sigma_layer import sigma_layer
 from .smorph import smorph
 
-__all__ = ['dilation', 'erosion', 'opening', 'closing', 'emorph', 'smorph']
+__all__ = ['dilation', 'erosion', 'opening', 'closing', 'sigma_layer', 'smorph']

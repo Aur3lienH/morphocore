@@ -36,10 +36,10 @@ Closing
 Exact Interpolation
 ^^^^^^^^^^^^^^^^^^^
 
-EMorph
-""""""
+SigmaLayer
+""""""""""
 
-.. autofunction:: morphocore.functional.emorph
+.. autofunction:: morphocore.functional.sigma_layer
    :no-index:
 
 Smooth Approximation

@@ -81,7 +81,7 @@ class SMorph(AlphaModule):
     See Also
     --------
     morphocore.functional.smorph : Functional interface
-    EMorph : Exact morphological interpolation layer
+    SigmaLayer : Exact morphological interpolation layer
     Dilation : Standard dilation layer
     Erosion : Standard erosion layer
     """

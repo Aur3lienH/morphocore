@@ -1,10 +1,10 @@
 import torch
 from torch import nn
 from alpha_module import AlphaModule
-from functional import emorph
+from functional import sigma_layer
 
 
-class EMorph(AlphaModule):
+class SigmaLayer(AlphaModule):
 
     """
     Exact Morphological module that switch between erosion and dilation with a control parameter alpha.
@@ -17,15 +17,15 @@ class EMorph(AlphaModule):
         - alpha is the control parameter between erosion and dilation
 
     Behaviour with different alpha : 
-        - When alpha -> ∞ then Emorph tends to be a dilation 
-        - When alpha -> -∞ then Emorph tends to be an erosion
-        - When alpha is close to 0 -> then Emorph is something between an erosion and a dilation.
+        - When alpha -> ∞ then SigmaLayer tends to be a dilation 
+        - When alpha -> -∞ then SigmaLayer tends to be an erosion
+        - When alpha is close to 0 -> then SigmaLayer is something between an erosion and a dilation.
     """
 
     def __init__(self, in_channel : int, out_channel : int, kernel_shape : tuple):
 
         """
-        Initialize Emorph Module
+        Initialize SigmaLayer Module
         
         Args:
             in_channel (int): Number of input channels
@@ -48,6 +48,6 @@ class EMorph(AlphaModule):
         Returns:
             Output tensor, shape : (batch, out_channels, height, width)
         """
-        return emorph(x, self.weight, self.alpha)
+        return sigma_layer(x, self.weight, self.alpha)
         
 

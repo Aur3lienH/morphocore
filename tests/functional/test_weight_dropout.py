@@ -28,10 +28,10 @@ def functional_call(name, x, weights, dropout, training):
         return F.opening(x, w, w_second, **common)
     if name == 'closing':
         return F.closing(x, w, w_second, **common)
-    return F.emorph(x, w, alpha, **common)
+    return F.sigma_layer(x, w, alpha, **common)
 
 
-@pytest.mark.parametrize('name', ['opening', 'closing', 'emorph'])
+@pytest.mark.parametrize('name', ['opening', 'closing', 'sigma_layer'])
 class TestFunctionalWeightDropout:
 
     def test_inactive_outside_training(self, name, device):
@@ -73,7 +73,7 @@ class TestFunctionalWeightDropout:
         torch.testing.assert_close(training, inference)
 
 
-@pytest.mark.parametrize('cls', [N.Opening, N.Closing, N.EMorph])
+@pytest.mark.parametrize('cls', [N.Opening, N.Closing, N.SigmaLayer])
 class TestModuleWeightDropout:
 
     def test_follows_train_and_eval(self, cls, device):
@@ -108,7 +108,7 @@ class TestDropoutGeodesicInteraction:
     """
     Dropped weights are set to -inf and geodesic padding fills the border with -inf too, so a
     border pixel whose only surviving tap falls outside the image has no finite candidate and the
-    operation returns +/-inf. Predates weight dropout being wired into opening/closing/emorph;
+    operation returns +/-inf. Predates weight dropout being wired into opening/closing/sigma_layer;
     those merely surface it in a gradient rather than only in the output.
     """
 
@@ -121,7 +121,7 @@ class TestDropoutGeodesicInteraction:
         assert not torch.isinf(F.dilation(x, w, padding_mode='zero')).any()
         assert not torch.isinf(F.dilation(x, w, padding_mode='replicate')).any()
 
-    def test_emorph_gradient_goes_infinite(self, device):
+    def test_sigma_layer_gradient_goes_infinite(self, device):
         """
         Deterministic stand-in for a heavy dropout draw. Relying on an actual dropout draw would
         be flaky, since only some draws leave a border pixel with no finite candidate.
@@ -131,9 +131,9 @@ class TestDropoutGeodesicInteraction:
         x = torch.randn(1, 1, 8, 8, device=device)
 
         alpha = torch.zeros(1, 1, device=device, requires_grad=True)
-        F.emorph(x, w, alpha, padding_mode='geodesic').sum().backward()
+        F.sigma_layer(x, w, alpha, padding_mode='geodesic').sum().backward()
         assert not torch.isfinite(alpha.grad).all(), "known defect appears to be fixed, drop this test"
 
         safe = torch.zeros(1, 1, device=device, requires_grad=True)
-        F.emorph(x, w, safe, padding_mode='zero').sum().backward()
+        F.sigma_layer(x, w, safe, padding_mode='zero').sum().backward()
         assert torch.isfinite(safe.grad).all()
