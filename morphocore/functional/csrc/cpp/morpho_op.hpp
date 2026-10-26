@@ -17,7 +17,7 @@ class MorphoOperation : public torch::autograd::Function<MorphoOperation<op, mer
 {
 public:
     static torch::Tensor forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight, bool save_indices,
-                                 MORPHO_PADDING padding, double padding_value);
+                                 MORPHO_PADDING padding, double padding_value, double noise_scale);
 
     static torch::autograd::tensor_list backward(torch::autograd::AutogradContext* ctx, torch::autograd::tensor_list grad_outputs);
 

@@ -3,7 +3,7 @@ from morphocore.functional import dilation, erosion
 
 
 def opening(x: torch.Tensor, w_erosion: torch.Tensor, w_dilation: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'replicate', save_indices: bool = True, padding_value: float = 0.0,
-            weight_dropout: float = 0.0, training: bool = False) -> torch.Tensor:
+            weight_dropout: float = 0.0, training: bool = False, noise_scale: float = 0.0) -> torch.Tensor:
     """
     Apply morphological opening operation (erosion followed by dilation).
 
@@ -32,8 +32,12 @@ def opening(x: torch.Tensor, w_erosion: torch.Tensor, w_dilation: torch.Tensor, 
     weight_dropout : float, optional
         Probability of dropping weights in the structuring element during training.
         Each stage draws its own mask. Must be in range [0, 1). Default is 0.0 (no dropout).
+    noise_scale : float, optional
+        Half width of the uniform noise added to the structuring element during training.
+        Each stage and batch element draws its own noise in [-noise_scale, noise_scale].
+        Only supported on CPU. Default is 0.0 (no noise).
     training : bool, optional
-        Whether the model is in training mode. Dropout is only applied when True.
+        Whether the model is in training mode. Dropout and noise are only applied when True.
         Default is False.
     save_indices : bool, optional
         Whether to save the indices of extremum values for gradient computation.
@@ -90,6 +94,8 @@ def opening(x: torch.Tensor, w_erosion: torch.Tensor, w_dilation: torch.Tensor, 
     erosion : Morphological erosion operation
     """
     eroded = erosion(x, w_erosion, channel_merge_mode, padding_mode, save_indices,
-                     weight_dropout=weight_dropout, training=training, padding_value=padding_value)
+                     weight_dropout=weight_dropout, training=training, padding_value=padding_value,
+                     noise_scale=noise_scale)
     return dilation(eroded, w_dilation, 'identity', padding_mode, save_indices,
-                    weight_dropout=weight_dropout, training=training, padding_value=padding_value)
+                    weight_dropout=weight_dropout, training=training, padding_value=padding_value,
+                    noise_scale=noise_scale)

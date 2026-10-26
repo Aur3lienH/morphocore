@@ -4,7 +4,7 @@ from torch.functional import F
 from morphocore.functional import dilation
 from morphocore.functional import erosion
 
-def sigma_layer(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'replicate', save_indices: bool = True, padding_value: float = 0.0, weight_dropout: float = 0.0, training: bool = False) -> torch.Tensor:
+def sigma_layer(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_merge_mode: str = 'sum', padding_mode: str = 'replicate', save_indices: bool = True, padding_value: float = 0.0, weight_dropout: float = 0.0, training: bool = False, noise_scale: float = 0.0) -> torch.Tensor:
     """
     Apply morphological interpolation between erosion and dilation.
     
@@ -34,8 +34,12 @@ def sigma_layer(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_m
     weight_dropout : float, optional
         Probability of dropping weights in the structuring element during training.
         Each stage draws its own mask. Must be in range [0, 1). Default is 0.0 (no dropout).
+    noise_scale : float, optional
+        Half width of the uniform noise added to the structuring element during training.
+        Each stage and batch element draws its own noise in [-noise_scale, noise_scale].
+        Only supported on CPU. Default is 0.0 (no noise).
     training : bool, optional
-        Whether the model is in training mode. Dropout is only applied when True.
+        Whether the model is in training mode. Dropout and noise are only applied when True.
         Default is False.
     save_indices : bool, optional
         Whether to save the indices of extremum values for gradient computation if the implementation exists for the specific configuration.
@@ -68,10 +72,10 @@ def sigma_layer(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_m
     """
     out_erosion = erosion(x, w, channel_merge_mode=channel_merge_mode, padding_mode=padding_mode,
                           save_indices=save_indices, padding_value=padding_value,
-                          weight_dropout=weight_dropout, training=training)
+                          weight_dropout=weight_dropout, training=training, noise_scale=noise_scale)
     out_dilation = dilation(x, w, channel_merge_mode=channel_merge_mode, padding_mode=padding_mode,
                             save_indices=save_indices, padding_value=padding_value,
-                            weight_dropout=weight_dropout, training=training)
+                            weight_dropout=weight_dropout, training=training, noise_scale=noise_scale)
 
     soft = torch.sigmoid(alpha.mean(dim=1))  # (C_out,)
     soft = soft.view(1, -1, 1, 1)  # (1, C_out, 1, 1)

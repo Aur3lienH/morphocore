@@ -31,6 +31,10 @@ class Erosion(MorphoModule):
     padding_value : float, optional
         Border value used when padding_mode is 'constant'. Ignored by the other
         padding modes. Default is 0.0.
+    noise_scale : float, optional
+        Half width of the uniform noise added to the structuring element during training.
+        Each batch element draws its own noise in [-noise_scale, noise_scale].
+        Only supported on CPU. Default is 0.0 (no noise).
 
     Attributes
     ----------
@@ -82,15 +86,16 @@ class Erosion(MorphoModule):
     def __init__(self, in_channels: int, out_channels: int, kernel_size: tuple,
                  channel_merge_mode: str = "sum", padding_mode: str = "replicate",
                  dtype: torch.dtype = torch.float32, save_indices: bool = True,
-                 weight_dropout: float = 0.0, padding_value: float = 0.0):
+                 weight_dropout: float = 0.0, padding_value: float = 0.0, noise_scale: float = 0.0):
         if type(kernel_size) is int:
             kernel_size = (kernel_size, kernel_size)
         self.save_indices = save_indices
         self.weight_dropout = weight_dropout
+        self.noise_scale = noise_scale
         super().__init__(in_channels, out_channels, kernel_size, channel_merge_mode, padding_mode, dtype=dtype,
                          padding_value=padding_value)
 
     def forward(self, x):
         return erosion(x, self.weight, self.channel_merge_mode, self.padding_mode,
                         self.save_indices, self.weight_dropout, self.training,
-                        self.padding_value)
+                        self.padding_value, self.noise_scale)

@@ -18,11 +18,15 @@
 /// @param weight Weight tensor of shape [out_channels, in_channels, kernel_height, kernel_width].
 /// @param padding Padding mode requested by the caller.
 /// @param padding_value Value used by MORPHO_PADDING::CONSTANT, ignored by the other modes.
+/// @param noise_scale If positive, every batch element uses its own copy of the weight with uniform
+///        noise in [-noise_scale, noise_scale] added. CPU only.
 /// @return Output tensor of shape [batch, out_channels, height, width].
 template <MORPHO_OPERATION Op, MORPHO_MERGE merge, MORPHO_PADDING_KIND kind>
 torch::Tensor MorphoOperation<Op, merge, kind>::forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight,
-                                                        bool save_indices, MORPHO_PADDING padding, double padding_value)
+                                                        bool save_indices, MORPHO_PADDING padding, double padding_value, double noise_scale)
 {
+    TORCH_CHECK(noise_scale >= 0.0, "noise_scale must be non negative");
+    TORCH_CHECK(noise_scale == 0.0 || !input.is_cuda(), "noise_scale is only supported on CPU");
     TORCH_CHECK(padding_kind(padding) == kind, "Padding mode does not belong to the instantiated padding family");
     TensorInputDim input_dim_manager(input);
     TensorWeightDim weight_dim_manager(weight);
@@ -49,6 +53,8 @@ torch::Tensor MorphoOperation<Op, merge, kind>::forward(torch::autograd::Autogra
 
     torch::Tensor output;
     torch::Tensor max_indices;
+    // Left undefined without noise. The CPU kernels read a [batch, ...] weight as one per batch element.
+    torch::Tensor sample_weight;
     const int MAX_GRID_DIM = 65535;
     bool should_save_indices = save_indices && (merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN) && out_channels * batch_size < MAX_GRID_DIM;
 
@@ -85,6 +91,13 @@ torch::Tensor MorphoOperation<Op, merge, kind>::forward(torch::autograd::Autogra
     else
     {
         constexpr const char* cpu_operation_name = "morpho_operation_forward_cpu";
+        if (noise_scale > 0.0)
+        {
+            const torch::Tensor noise = (torch::rand({batch_size, out_channels, weight_shape[1], kernel_height, kernel_width},
+                                                     weight_correct_dims.options()) * 2.0 - 1.0) * noise_scale;
+            sample_weight = (weight_correct_dims.unsqueeze(0) + noise).contiguous();
+        }
+        const torch::Tensor& kernel_weight = sample_weight.defined() ? sample_weight : weight_correct_dims;
 
         AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), cpu_operation_name, [&] {
             const scalar_t fill = morpho_fill_value<Op, scalar_t>(padding, padding_value);
@@ -95,17 +108,17 @@ torch::Tensor MorphoOperation<Op, merge, kind>::forward(torch::autograd::Autogra
                 if (should_save_indices)
                 {
                     std::tie(output, max_indices) =
-                        morpho_operation_forward_cpu<Op, merge, kind, scalar_t, true>(input_correct_dims, weight_correct_dims, fill);
+                        morpho_operation_forward_cpu<Op, merge, kind, scalar_t, true>(input_correct_dims, kernel_weight, fill);
                     return;
                 }
             }
-            output = std::get<0>(morpho_operation_forward_cpu<Op, merge, kind, scalar_t, false>(input_correct_dims, weight_correct_dims, fill));
+            output = std::get<0>(morpho_operation_forward_cpu<Op, merge, kind, scalar_t, false>(input_correct_dims, kernel_weight, fill));
             max_indices = torch::empty({0}, torch::kInt);
         });
     }
 
     output = input_dim_manager.ToOriginalTensor(output);
-    ctx->save_for_backward({input_correct_dims, weight_correct_dims, max_indices});
+    ctx->save_for_backward({input_correct_dims, weight_correct_dims, max_indices, sample_weight});
     // The padding mode is not a tensor, so it travels to backward through saved_data.
     ctx->saved_data["padding"] = static_cast<int64_t>(padding);
     ctx->saved_data["padding_value"] = padding_value;
@@ -126,6 +139,7 @@ torch::autograd::tensor_list MorphoOperation<Op, merge, kind>::backward(torch::a
     auto input = saved[0];
     auto weight = saved[1];
     auto max_indices = saved[2];
+    auto sample_weight = saved[3];
     const auto padding = static_cast<MORPHO_PADDING>(ctx->saved_data["padding"].toInt());
     const double padding_value = ctx->saved_data["padding_value"].toDouble();
     auto grad_output = grad_outputs[0];
@@ -168,6 +182,8 @@ torch::autograd::tensor_list MorphoOperation<Op, merge, kind>::backward(torch::a
             (Op == MORPHO_OPERATION::DILATION) ? "morpho_dilation_backward_cpu" : "morpho_erosion_backward_cpu";
 
         torch::autograd::tensor_list result;
+        // The noisy weights chose the winning taps, so the backward must recompute with them.
+        const torch::Tensor& kernel_weight = sample_weight.defined() ? sample_weight : weight;
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), cpu_operation_name, [&] {
             const scalar_t fill = morpho_fill_value<Op, scalar_t>(padding, padding_value);
             constexpr bool merge_supports_indices = (merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN);
@@ -176,17 +192,17 @@ torch::autograd::tensor_list MorphoOperation<Op, merge, kind>::backward(torch::a
             {
                 if (indices_were_saved)
                 {
-                    result = morpho_operation_backward_cpu<Op, merge, kind, scalar_t, true>(input, weight, grad_output, max_indices, fill);
+                    result = morpho_operation_backward_cpu<Op, merge, kind, scalar_t, true>(input, kernel_weight, grad_output, max_indices, fill);
                     return;
                 }
             }
-            result = morpho_operation_backward_cpu<Op, merge, kind, scalar_t, false>(input, weight, grad_output, max_indices, fill);
+            result = morpho_operation_backward_cpu<Op, merge, kind, scalar_t, false>(input, kernel_weight, grad_output, max_indices, fill);
         });
 
         grad_input = result[0];
         grad_weight = result[1];
     }
 
-    // One undefined gradient per non differentiable forward argument: save_indices, padding, padding_value.
-    return {grad_input, grad_weight, torch::Tensor(), torch::Tensor(), torch::Tensor()};
+    // One undefined gradient per non differentiable forward argument: save_indices, padding, padding_value, noise_scale.
+    return {grad_input, grad_weight, torch::Tensor(), torch::Tensor(), torch::Tensor(), torch::Tensor()};
 }

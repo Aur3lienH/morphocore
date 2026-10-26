@@ -22,6 +22,7 @@ struct MorphoForwardBands
         MorphoGeometryCPU g;
         const T* input;
         const T* weight;
+        int64_t weight_batch_stride;  // 0 when every batch element shares the weight.
         T* output;
         int32_t* indices;
         T fill;
@@ -45,6 +46,7 @@ struct MorphoForwardBands
             const int64_t o_begin = identity ? (unit / a.bands) % g.out_channels : 0;
             const int64_t o_end = identity ? o_begin + 1 : g.out_channels;
             const T* input_batch = a.input + b * g.in_channels * g.height * g.width;
+            const T* weight_batch = a.weight + b * a.weight_batch_stride;
 
             if constexpr (identity)
             {
@@ -63,14 +65,14 @@ struct MorphoForwardBands
                     const int32_t* result_index;
                     if constexpr (identity)
                     {
-                        morpho_row_extremum<BYTES, op, T, save_index>(g, tile.channel(0), a.weight + o * g.taps, h - h_begin, scratch.best.data(),
+                        morpho_row_extremum<BYTES, op, T, save_index>(g, tile.channel(0), weight_batch + o * g.taps, h - h_begin, scratch.best.data(),
                                                                       scratch.arg.data());
                         result = scratch.best.data();
                         result_index = scratch.arg.data();
                     }
                     else
                     {
-                        morpho_row_merge<BYTES, op, merge, T, save_index>(g, tile, a.weight + o * g.in_channels * g.taps, h - h_begin, scratch);
+                        morpho_row_merge<BYTES, op, merge, T, save_index>(g, tile, weight_batch + o * g.in_channels * g.taps, h - h_begin, scratch);
                         result = scratch.merged.data();
                         result_index = scratch.winner.data();
                     }
@@ -105,7 +107,8 @@ struct MorphoForwardBands
 ///         that produced it (MAX, MIN and IDENTITY merges, where a single tap does), so that the
 ///         backward pass does not have to recompute it.
 /// @param input Input tensor of shape [batch, in_channels, height, width].
-/// @param weight Structuring element of shape [out_channels, in_channels, kernel_height, kernel_width].
+/// @param weight Structuring element of shape [out_channels, in_channels, kernel_height, kernel_width],
+///        or [batch, out_channels, in_channels, kernel_height, kernel_width] for one per batch element.
 /// @param fill Border fill value, see morpho_fill_value. Unused when kind is REPLICATE.
 /// @return (output, indices); indices is an undefined tensor unless save_index.
 template <MORPHO_OPERATION op, MORPHO_MERGE merge, MORPHO_PADDING_KIND kind, typename T, bool save_index>
@@ -117,7 +120,9 @@ std::tuple<torch::Tensor, torch::Tensor> morpho_operation_forward_cpu(torch::Ten
 
     auto input_contig = input.contiguous();
     auto weight_contig = weight.contiguous();
-    const MorphoGeometryCPU g = MorphoGeometryCPU::make<T>(input_contig, weight_contig);
+    const bool per_sample = weight_contig.dim() == 5;
+    const MorphoGeometryCPU g = MorphoGeometryCPU::make<T>(input_contig, per_sample ? weight_contig[0] : weight_contig);
+    TORCH_CHECK(!per_sample || weight_contig.size(0) == g.batch_size, "A per sample weight needs one structuring element per batch element");
 
     if constexpr (Bands::identity)
     {
@@ -140,6 +145,7 @@ std::tuple<torch::Tensor, torch::Tensor> morpho_operation_forward_cpu(torch::Ten
     args.g = g;
     args.input = input_contig.template data_ptr<T>();
     args.weight = weight_contig.template data_ptr<T>();
+    args.weight_batch_stride = per_sample ? g.out_channels * g.weight_in_channels * g.taps : 0;
     args.output = output.template data_ptr<T>();
     args.indices = save_index ? indices.template data_ptr<int32_t>() : nullptr;
     args.fill = fill;

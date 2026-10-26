@@ -32,6 +32,10 @@ class SigmaLayer(AlphaModule):
     weight_dropout : float, optional
         Probability of dropping weights in the structuring element during training.
         Each stage draws its own mask. Must be in range [0, 1). Default is 0.0 (no dropout).
+    noise_scale : float, optional
+        Half width of the uniform noise added to the structuring element during training.
+        Each stage and batch element draws its own noise in [-noise_scale, noise_scale].
+        Only supported on CPU. Default is 0.0 (no noise).
     save_indices : bool, optional
         Whether to save the indices of extremum values for gradient computation.
         Default is True.
@@ -85,7 +89,7 @@ class SigmaLayer(AlphaModule):
     Erosion : Standard erosion layer
     """
 
-    def __init__(self, in_channels : int, out_channels : int, kernel_size : tuple, channel_merge_mode: str = "sum", padding_mode: str = "replicate", init_alpha: float = 0.0, dtype: torch.dtype = torch.float32, save_indices: bool = True, padding_value: float = 0.0, weight_dropout: float = 0.0):
+    def __init__(self, in_channels : int, out_channels : int, kernel_size : tuple, channel_merge_mode: str = "sum", padding_mode: str = "replicate", init_alpha: float = 0.0, dtype: torch.dtype = torch.float32, save_indices: bool = True, padding_value: float = 0.0, weight_dropout: float = 0.0, noise_scale: float = 0.0):
         if type(kernel_size) is int:
             kernel_size = (kernel_size, kernel_size)
         super().__init__(in_channels, out_channels, kernel_size, channel_merge_mode, init_alpha, dtype=dtype)
@@ -93,8 +97,9 @@ class SigmaLayer(AlphaModule):
         self.padding_mode = padding_mode
         self.padding_value = padding_value
         self.weight_dropout = weight_dropout
+        self.noise_scale = noise_scale
 
     def forward(self, x):
         return sigma_layer(x, self.weight, self.alpha, self.channel_merge_mode, padding_mode=self.padding_mode,
                       save_indices=self.save_indices, padding_value=self.padding_value,
-                      weight_dropout=self.weight_dropout, training=self.training)
+                      weight_dropout=self.weight_dropout, training=self.training, noise_scale=self.noise_scale)

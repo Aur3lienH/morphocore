@@ -5,7 +5,7 @@ from morphocore.functional.merge_enum import str_to_merge, str_to_padding
 def dilation(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum',
              padding_mode: str = 'replicate', save_indices: bool = True,
              weight_dropout: float = 0.0, training: bool = False,
-             padding_value: float = 0.0) -> torch.Tensor:
+             padding_value: float = 0.0, noise_scale: float = 0.0) -> torch.Tensor:
     """
     Apply morphological dilation operation on input tensor.
 
@@ -39,11 +39,15 @@ def dilation(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum',
         Dropped weights are set to -inf so they never contribute to the maximum.
         Must be in range [0, 1). Default is 0.0 (no dropout).
     training : bool, optional
-        Whether the model is in training mode. Dropout is only applied when True.
+        Whether the model is in training mode. Dropout and noise are only applied when True.
         Default is False.
     padding_value : float, optional
         Border value used when padding_mode is 'constant'. Ignored by the other
         padding modes. Default is 0.0.
+    noise_scale : float, optional
+        Half width of the uniform noise added to the structuring element during training.
+        Each batch element draws its own noise in [-noise_scale, noise_scale].
+        Only supported on CPU. Default is 0.0 (no noise).
 
     Returns
     -------
@@ -83,4 +87,5 @@ def dilation(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum',
         w = torch.where(dropout_mask, w, torch.tensor(-float('inf'), device=w.device, dtype=w.dtype))
     
     return ops.dilation(x, w, str_to_merge(channel_merge_mode), str_to_padding(padding_mode),
-                        padding_value, save_indices)
+                        padding_value, save_indices,
+                        noise_scale if training else 0.0)

@@ -24,6 +24,7 @@ struct MorphoBackwardBands
         const T* input;             // Read unless save_index.
         const int32_t* indices;     // Packed winning taps, if save_index.
         const T* weight;
+        int64_t weight_batch_stride;  // 0 when every batch element shares the weight.
         const T* grad_output;
         T* grad_input;
         T* grad_weights;            // One weight gradient per thread.
@@ -48,7 +49,7 @@ struct MorphoBackwardBands
 
         for (int64_t o = 0; o < g.out_channels; o++)
         {
-            const T* weight_out = a.weight + o * g.in_channels * g.taps;
+            const T* weight_out = a.weight + b * a.weight_batch_stride + o * g.in_channels * g.taps;
             T* grad_weight_out = grad_weight_local + o * g.in_channels * g.taps;
 
             for (int64_t h = h_begin; h < h_end; h++)
@@ -106,7 +107,7 @@ struct MorphoBackwardBands
             for (int64_t i = i_begin; i < i_end; i++)
             {
                 const int64_t wi = identity ? 0 : i;
-                const T* weight_pair = a.weight + (o * g.weight_in_channels + wi) * g.taps;
+                const T* weight_pair = a.weight + b * a.weight_batch_stride + (o * g.weight_in_channels + wi) * g.taps;
                 std::fill(weight_lanes.begin(), weight_lanes.end(), static_cast<T>(0));
 
                 for (int64_t h = h_begin; h < h_end; h++)
@@ -209,6 +210,9 @@ struct MorphoBackwardBands
 /// @tparam kind Padding family used for out of bounds taps.
 /// @tparam T Data type of tensor elements.
 /// @tparam save_index If true, read the winning taps from max_indices instead of recomputing them.
+/// @param weight Structuring element, shared or per batch element as in morpho_operation_forward_cpu.
+///        The weight gradient always has the shared shape: a per sample weight is the shared one
+///        plus a constant, so its gradient is the sum over the batch.
 /// @param max_indices Packed indices from morpho_operation_forward_cpu, used when save_index.
 /// @param fill Border fill value, see morpho_fill_value. Unused when kind is REPLICATE.
 /// @return The gradient tensors for the input and the weight.
@@ -222,10 +226,12 @@ torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, 
     auto input_contig = input.contiguous();
     auto weight_contig = weight.contiguous();
     auto grad_output_contig = grad_output.contiguous();
-    const MorphoGeometryCPU g = MorphoGeometryCPU::make<T>(input_contig, weight_contig);
+    const bool per_sample = weight_contig.dim() == 5;
+    const torch::Tensor shared_weight = per_sample ? weight_contig[0] : weight_contig;
+    const MorphoGeometryCPU g = MorphoGeometryCPU::make<T>(input_contig, shared_weight);
 
     torch::Tensor grad_input = torch::zeros_like(input_contig);
-    torch::Tensor grad_weight = torch::zeros_like(weight_contig);
+    torch::Tensor grad_weight = torch::zeros_like(shared_weight);
 
     torch::Tensor indices;
     if constexpr (save_index)
@@ -249,6 +255,7 @@ torch::autograd::tensor_list morpho_operation_backward_cpu(torch::Tensor input, 
     args.input = input_contig.template data_ptr<T>();
     args.indices = save_index ? indices.template data_ptr<int32_t>() : nullptr;
     args.weight = weight_contig.template data_ptr<T>();
+    args.weight_batch_stride = per_sample ? g.out_channels * g.weight_in_channels * g.taps : 0;
     args.grad_output = grad_output_contig.template data_ptr<T>();
     args.grad_input = grad_input.template data_ptr<T>();
     args.grad_weights = local_grad_weights.data();

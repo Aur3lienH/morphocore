@@ -32,17 +32,20 @@ static MORPHO_PADDING to_padding(int64_t padding)
 /// @tparam kind Padding family that implements `padding`.
 template <MORPHO_OPERATION op, MORPHO_PADDING_KIND kind>
 static torch::Tensor morpho_apply_merge(torch::Tensor input, torch::Tensor weight, MORPHO_MERGE merge, MORPHO_PADDING padding, double padding_value,
-                                        bool save_indices)
+                                        bool save_indices, double noise_scale)
 {
     switch (merge)
     {
-        case MORPHO_MERGE::ADD: return MorphoOperation<op, MORPHO_MERGE::ADD, kind>::apply(input, weight, save_indices, padding, padding_value);
-        case MORPHO_MERGE::MAX: return MorphoOperation<op, MORPHO_MERGE::MAX, kind>::apply(input, weight, save_indices, padding, padding_value);
-        case MORPHO_MERGE::MIN: return MorphoOperation<op, MORPHO_MERGE::MIN, kind>::apply(input, weight, save_indices, padding, padding_value);
+        case MORPHO_MERGE::ADD:
+            return MorphoOperation<op, MORPHO_MERGE::ADD, kind>::apply(input, weight, save_indices, padding, padding_value, noise_scale);
+        case MORPHO_MERGE::MAX:
+            return MorphoOperation<op, MORPHO_MERGE::MAX, kind>::apply(input, weight, save_indices, padding, padding_value, noise_scale);
+        case MORPHO_MERGE::MIN:
+            return MorphoOperation<op, MORPHO_MERGE::MIN, kind>::apply(input, weight, save_indices, padding, padding_value, noise_scale);
         case MORPHO_MERGE::AVERAGE:
-            return MorphoOperation<op, MORPHO_MERGE::AVERAGE, kind>::apply(input, weight, save_indices, padding, padding_value);
+            return MorphoOperation<op, MORPHO_MERGE::AVERAGE, kind>::apply(input, weight, save_indices, padding, padding_value, noise_scale);
         case MORPHO_MERGE::IDENTITY:
-            return MorphoOperation<op, MORPHO_MERGE::IDENTITY, kind>::apply(input, weight, save_indices, padding, padding_value);
+            return MorphoOperation<op, MORPHO_MERGE::IDENTITY, kind>::apply(input, weight, save_indices, padding, padding_value, noise_scale);
         default: TORCH_CHECK(false, "Unsupported merge operation"); return torch::Tensor();
     }
 }
@@ -54,15 +57,17 @@ static torch::Tensor morpho_apply_merge(torch::Tensor input, torch::Tensor weigh
 /// @param padding Padding mode.
 /// @param padding_value Value used by MORPHO_PADDING::CONSTANT, ignored by the other modes.
 template <MORPHO_OPERATION op>
-static torch::Tensor morpho_apply(torch::Tensor input, torch::Tensor weight, int64_t merge, int64_t padding, double padding_value, bool save_indices)
+static torch::Tensor morpho_apply(torch::Tensor input, torch::Tensor weight, int64_t merge, int64_t padding, double padding_value, bool save_indices,
+                                  double noise_scale)
 {
     const MORPHO_PADDING mode = to_padding(padding);
     switch (padding_kind(mode))
     {
         case MORPHO_PADDING_KIND::REPLICATE:
-            return morpho_apply_merge<op, MORPHO_PADDING_KIND::REPLICATE>(input, weight, to_merge(merge), mode, padding_value, save_indices);
+            return morpho_apply_merge<op, MORPHO_PADDING_KIND::REPLICATE>(input, weight, to_merge(merge), mode, padding_value, save_indices,
+                                                                          noise_scale);
         case MORPHO_PADDING_KIND::FILL:
-            return morpho_apply_merge<op, MORPHO_PADDING_KIND::FILL>(input, weight, to_merge(merge), mode, padding_value, save_indices);
+            return morpho_apply_merge<op, MORPHO_PADDING_KIND::FILL>(input, weight, to_merge(merge), mode, padding_value, save_indices, noise_scale);
         default: TORCH_CHECK(false, "Unsupported padding mode"); return torch::Tensor();
     }
 }
@@ -73,11 +78,12 @@ static torch::Tensor morpho_apply(torch::Tensor input, torch::Tensor weight, int
 /// @param merge Merge channel mode, a MORPHO_MERGE value
 /// @param padding Padding mode used on the borders, a MORPHO_PADDING value
 /// @param padding_value Value used by MORPHO_PADDING::CONSTANT, ignored by the other modes
+/// @param noise_scale Half width of the uniform noise added to the weight of each batch element, CPU only
 /// @return Output tensor
 static torch::Tensor morpho_dilation(torch::Tensor input, torch::Tensor weight, int64_t merge, int64_t padding, double padding_value,
-                                     bool save_indices)
+                                     bool save_indices, double noise_scale)
 {
-    return morpho_apply<MORPHO_OPERATION::DILATION>(input, weight, merge, padding, padding_value, save_indices);
+    return morpho_apply<MORPHO_OPERATION::DILATION>(input, weight, merge, padding, padding_value, save_indices, noise_scale);
 }
 
 /// @brief Morphological erosion operation
@@ -86,11 +92,12 @@ static torch::Tensor morpho_dilation(torch::Tensor input, torch::Tensor weight, 
 /// @param merge Merge channel mode, a MORPHO_MERGE value
 /// @param padding Padding mode used on the borders, a MORPHO_PADDING value
 /// @param padding_value Value used by MORPHO_PADDING::CONSTANT, ignored by the other modes
+/// @param noise_scale Half width of the uniform noise added to the weight of each batch element, CPU only
 /// @return Output tensor
 static torch::Tensor morpho_erosion(torch::Tensor input, torch::Tensor weight, int64_t merge, int64_t padding, double padding_value,
-                                    bool save_indices)
+                                    bool save_indices, double noise_scale)
 {
-    return morpho_apply<MORPHO_OPERATION::EROSION>(input, weight, merge, padding, padding_value, save_indices);
+    return morpho_apply<MORPHO_OPERATION::EROSION>(input, weight, merge, padding, padding_value, save_indices, noise_scale);
 }
 
 /// @brief Smorph operation (Smooth approximation of erosion or dilation) alpha->-inf => erosion, alpha > 0 => dilation
@@ -122,10 +129,10 @@ static torch::Tensor smorph_scm(torch::Tensor input, torch::Tensor weight, torch
 // modes are the int values of MORPHO_MERGE and MORPHO_PADDING, mirrored by merge_enum.py.
 TORCH_LIBRARY(morphocore, m)
 {
-    m.def("dilation(Tensor input, Tensor weight, int merge, int padding, float padding_value=0., bool save_indices=True) "
-          "-> Tensor");
-    m.def("erosion(Tensor input, Tensor weight, int merge, int padding, float padding_value=0., bool save_indices=True) "
-          "-> Tensor");
+    m.def("dilation(Tensor input, Tensor weight, int merge, int padding, float padding_value=0., bool save_indices=True, "
+          "float noise_scale=0.) -> Tensor");
+    m.def("erosion(Tensor input, Tensor weight, int merge, int padding, float padding_value=0., bool save_indices=True, "
+          "float noise_scale=0.) -> Tensor");
     m.def("smorph(Tensor input, Tensor weight, Tensor alpha, int merge) -> Tensor");
     m.def("smorph_scm(Tensor input, Tensor weight, Tensor alpha, Tensor beta) -> Tensor");
 }
