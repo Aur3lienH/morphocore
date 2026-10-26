@@ -89,6 +89,11 @@ build:
   timeout: 2h
   # The global cache (the test job's pip cache) is never used here.
   cache: []
+  variables:
+    # nvcc compiles the architectures one after the other: in parallel, each took about 1 GB more and
+    # the job's container ran out of memory. ninja's parallel sources still follow the container's
+    # memory limit (see ci/build_linux_wheels.sh).
+    MORPHO_NVCC_THREADS: "1"
   parallel:
     matrix:
       - TORCH_VERSION: ["2.6", "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14"]

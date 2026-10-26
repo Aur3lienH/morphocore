@@ -79,8 +79,10 @@ if with_cuda:
         'nvcc': [
             '-O3',
             '--use_fast_math',
-            # Compile the architectures above in parallel instead of one after the other.
-            '--threads=0',
+            # Compile the architectures above in parallel instead of one after the other: every thread
+            # is a cicc process of a GB or more, so MORPHO_NVCC_THREADS caps them on small machines
+            # (0, the default, is one per architecture).
+            f"--threads={os.environ.get('MORPHO_NVCC_THREADS', '0')}",
         ] + arch_flags + [
             '--maxrregcount=96',
             '-Xcompiler=-O3',

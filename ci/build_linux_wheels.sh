@@ -31,6 +31,25 @@ fi
 export TORCH_VERSION
 export MORPHO_WITH_CUDA=${MORPHO_WITH_CUDA:-1}
 
+# A C++ source takes up to 2 GB to compile (cc1plus), and every architecture nvcc compiles in
+# parallel about 1 GB (cicc), measured with torch 2.13: fully parallel the build needs about 20 GB,
+# more than a CI runner may have, and the kernel then kills the compilers. Keep 2.5 GB per compiler
+# process, within the container's memory limit if it has one, by capping the sources ninja compiles
+# at once (MAX_JOBS) and the architectures each nvcc compiles at once (MORPHO_NVCC_THREADS).
+MEM_KB=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
+for LIMIT_FILE in /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory/memory.limit_in_bytes; do
+    LIMIT=$(cat "$LIMIT_FILE" 2>/dev/null || true)
+    if [[ "$LIMIT" =~ ^[0-9]+$ ]] && (( LIMIT / 1024 < MEM_KB )); then
+        MEM_KB=$((LIMIT / 1024))
+    fi
+done
+SLOTS=$((MEM_KB * 10 / (25 * 1024 * 1024)))
+SLOTS=$((SLOTS > 0 ? SLOTS : 1))
+JOBS=$((SLOTS < $(nproc) ? SLOTS : $(nproc)))
+export MAX_JOBS=${MAX_JOBS:-$JOBS}
+export MORPHO_NVCC_THREADS=${MORPHO_NVCC_THREADS:-$((SLOTS / MAX_JOBS > 0 ? SLOTS / MAX_JOBS : 1))}
+echo "=== $((MEM_KB / 1024 / 1024)) GB available, $(nproc) CPUs: MAX_JOBS=$MAX_JOBS MORPHO_NVCC_THREADS=$MORPHO_NVCC_THREADS"
+
 # torch's libraries come with torch at install time: leave them out of the wheel.
 TORCH_LIBS=(libtorch_cpu.so libc10.so libc10_cuda.so libtorch.so libtorch_python.so libtorch_cuda.so)
 
