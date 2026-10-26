@@ -1,10 +1,8 @@
 #!/bin/bash
 # Installs a CUDA compiler in a manylinux_2_28 image, with the headers torch's extension headers need.
-# Usage: ci/install_cuda.sh <CUDA version, e.g. 13.0>
+# Usage: ci/install_cuda.sh <CUDA version, e.g. 12.8>
 #
-# Used as cibuildwheel's before-all for the torch releases the builder image cannot build: their
-# headers need a newer GCC than its gcc-toolset-12 (manylinux_2_28 has gcc-toolset-14), and torch
-# refuses an nvcc whose major version differs from its own CUDA (torch >= 2.11 uses CUDA 13).
+# Used by ci/docker/builder.Dockerfile, whose image builds the Linux wheels.
 set -euo pipefail
 
 V=${1/./-}
