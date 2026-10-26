@@ -1,10 +1,13 @@
 stages:
+  - images
   - test
   - build
   - deploy
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  # Builder images of the Linux wheels, one per CUDA version, see ci/docker.
+  BUILDER_IMAGE: "$CI_REGISTRY_IMAGE/builder"
 
 # Only pip's cache: the venv is rebuilt by every job anyway.
 cache:
@@ -40,43 +43,63 @@ test:
   rules:
     - if: $CI_COMMIT_BRANCH
 
-build:
-  stage: build
-  image: python:3.11
-  # One job builds every Python version of one torch version, which takes about an hour.
-  timeout: 2h
-  # The global cache (the test job's venv and pip cache) is never used here, and archiving it
-  # alone can take minutes.
+# Builds and pushes the builder images, only when their sources change (or from a manually run
+# pipeline): the wheel jobs then run in them directly, and the runner keeps them between jobs. The
+# first image (CUDA 12.3, gcc-toolset-12) builds up to torch 2.9. Newer headers need a newer GCC, and
+# torch >= 2.11 uses CUDA 13, so the others are the plain manylinux image (gcc-toolset-14) with the
+# CUDA of PyPI's torch installed.
+builder-images:
+  stage: images
+  image: docker:27
   cache: []
   services:
-    - name: docker:dind
+    - name: docker:27-dind
       command: ["--dns=8.8.8.8", "--dns=1.1.1.1"]
   variables:
     DOCKER_DRIVER: overlay2
     DOCKER_TLS_CERTDIR: "/certs"
-  # The builder image (CUDA 12.3, gcc-toolset-12) builds up to torch 2.9. Newer headers need a newer
-  # GCC, and torch >= 2.11 uses CUDA 13, so those use the plain manylinux image (gcc-toolset-14) and
-  # install the CUDA of PyPI's torch at the start (CUDA_VERSION).
+  parallel:
+    matrix:
+      - CUDA_VERSION: "12.3"
+        DOCKERFILE: ci/docker/builder-cuda12.3.Dockerfile
+      - CUDA_VERSION: ["12.8", "13.0"]
+        DOCKERFILE: ci/docker/builder.Dockerfile
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    # A tag only needs the image to exist: it is rebuilt by the branch pipeline of a change to it.
+    - |
+      if [ -n "${CI_COMMIT_TAG:-}" ] && docker manifest inspect "$BUILDER_IMAGE:cuda$CUDA_VERSION" > /dev/null 2>&1; then
+        echo "$BUILDER_IMAGE:cuda$CUDA_VERSION already exists"
+        exit 0
+      fi
+    - docker build -f "$DOCKERFILE" --build-arg CUDA_VERSION="$CUDA_VERSION" -t "$BUILDER_IMAGE:cuda$CUDA_VERSION" ci
+    - docker push "$BUILDER_IMAGE:cuda$CUDA_VERSION"
+  rules:
+    - if: $CI_COMMIT_BRANCH
+      changes:
+        - ci/docker/*
+        - ci/install_cuda.sh
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_COMMIT_TAG
+
+# One job builds every Python version of one torch version, in the builder image of its CUDA.
+build:
+  stage: build
+  image: $BUILDER_IMAGE:cuda$CUDA_VERSION
+  timeout: 2h
+  # The global cache (the test job's pip cache) is never used here.
+  cache: []
   parallel:
     matrix:
       - TORCH_VERSION: ["2.6", "2.7", "2.8", "2.9"]
+        CUDA_VERSION: "12.3"
       - TORCH_VERSION: "2.10"
         CUDA_VERSION: "12.8"
       - TORCH_VERSION: ["2.11", "2.12", "2.13", "2.14"]
         CUDA_VERSION: "13.0"
-  before_script:
-    - apt-get update && apt-get install -y docker.io
-    - pip install --upgrade pip cibuildwheel
   script:
-    - |
-      if [ -n "${CUDA_VERSION:-}" ]; then
-        export CIBW_MANYLINUX_X86_64_IMAGE=quay.io/pypa/manylinux_2_28_x86_64
-        export CIBW_BEFORE_ALL_LINUX="bash {project}/ci/install_cuda.sh ${CUDA_VERSION}"
-        export CIBW_ENVIRONMENT="TORCH_VERSION=${TORCH_VERSION} MORPHO_WITH_CUDA=1 CUDA_HOME=/usr/local/cuda-${CUDA_VERSION} PATH=/usr/local/cuda-${CUDA_VERSION}/bin:\$PATH"
-      else
-        export CIBW_ENVIRONMENT="TORCH_VERSION=${TORCH_VERSION}"
-      fi
-    - cibuildwheel --output-dir wheelhouse --platform linux
+    - bash ci/build_linux_wheels.sh "${TORCH_VERSION}" wheelhouse
   artifacts:
     paths:
       - wheelhouse/

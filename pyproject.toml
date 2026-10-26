@@ -43,34 +43,3 @@ exclude = [
     "morphocore.functional.csrc.cpp", 
     "morphocore.functional.csrc.cuda"
 ]
-# Configuration cibuildwheel (reste identique)
-[tool.cibuildwheel]
-build-frontend = {name = "pip", args = ["--no-build-isolation"]}
-build-verbosity = 3
-build = "cp311-* cp312-* cp313-*"
-skip = [
-    "*-win32",
-    "*-manylinux_i686",
-    "*-musllinux*",
-    "*-manylinux*ppc64le",
-    "*-manylinux*s390x",
-    "*-manylinux*armv7l",
-    "cp38-*",  # Add explicitly
-    "cp39-*",  # Add explicitly
-]
-environment = { MORPHO_WITH_CUDA="1", CUDA_HOME="/usr/local/cuda-12.1", CC = "/opt/rh/gcc-toolset-12/root/usr/bin/gcc",CXX = "/opt/rh/gcc-toolset-12/root/usr/bin/g++" }
-
-[tool.cibuildwheel.linux]
-manylinux-x86_64-image = "aur3lienh/morphocore-builder:latest"
-
-before-build = [
-
-    "ldd --version",
-    "pip install --upgrade pip", 
-    "pip index versions torch", 
-    "pip install torch==${TORCH_VERSION}",
-]
-
-repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel} --exclude libtorch_cpu.so --exclude libc10.so --exclude libc10_cuda.so --exclude libtorch.so --exclude libtorch_python.so --exclude libtorch_cuda.so"
-
-

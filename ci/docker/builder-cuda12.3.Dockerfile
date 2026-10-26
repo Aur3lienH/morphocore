@@ -1,4 +1,5 @@
-# Dockerfile to build a manylinux image with GCC 12 and CUDA 12.3
+# Builder image of the torch releases up to 2.9: manylinux with GCC 12 and CUDA 12.3. Built and pushed
+# by the builder-images job of .gitlab-ci.yml, see builder.Dockerfile for the newer releases.
 FROM sameli/manylinux_2_28_x86_64_cuda_12.3
 
 ARG DEBIAN_FRONTEND=noninteractive
