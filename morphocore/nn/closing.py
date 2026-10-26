@@ -42,7 +42,7 @@ class Closing(nn.Module):
     noise_scale : float, optional
         Half width of the uniform noise added to the structuring element during training.
         Each stage and batch element draws its own noise in [-noise_scale, noise_scale].
-        Only supported on CPU. Default is 0.0 (no noise).
+        Default is 0.0 (no noise).
     share_weights : bool, optional
         Whether both stages use a single structuring element. Default is True, which
         is what makes this layer a genuine morphological closing. Requires

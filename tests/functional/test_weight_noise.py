@@ -8,16 +8,17 @@ import morphocore.nn as N
 MERGES = ['sum', 'max', 'min', 'mean', 'identity']
 
 
-def make_inputs(merge, dtype=torch.float32):
+def make_inputs(merge, dtype=torch.float32, device='cpu'):
     torch.manual_seed(0)
-    x = torch.randn(3, 4, 9, 11, dtype=dtype)
-    w = torch.randn(4, 1 if merge == 'identity' else 4, 3, 5, dtype=dtype)
+    x = torch.randn(3, 4, 9, 11, dtype=dtype).to(device)
+    w = torch.randn(4, 1 if merge == 'identity' else 4, 3, 5, dtype=dtype).to(device)
     return x, w
 
 
 def draw_noise(w, batch_size, noise_scale):
-    """Same draw as the extension: one weight shaped noise per batch element, in [-s, s]."""
-    return (torch.rand((batch_size,) + tuple(w.shape), dtype=w.dtype) * 2.0 - 1.0) * noise_scale
+    """Same draw as the extension: one weight shaped noise per batch element, in [-s, s], on the
+    weight's device."""
+    return (torch.rand((batch_size,) + tuple(w.shape), dtype=w.dtype, device=w.device) * 2.0 - 1.0) * noise_scale
 
 
 def per_sample_reference(op, x, w, noise, merge, save_indices):
@@ -38,8 +39,8 @@ def per_sample_reference(op, x, w, noise, merge, save_indices):
 @pytest.mark.parametrize('op', ['dilation', 'erosion'])
 class TestWeightNoise:
 
-    def test_matches_per_sample_reference(self, op, merge, save_indices):
-        x, w = make_inputs(merge)
+    def test_matches_per_sample_reference(self, op, merge, save_indices, device):
+        x, w = make_inputs(merge, device=device)
         x.requires_grad_(True)
         w.requires_grad_(True)
         fn = F.dilation if op == 'dilation' else F.erosion
@@ -58,8 +59,8 @@ class TestWeightNoise:
         torch.testing.assert_close(grad_x, expected_grad_x)
         torch.testing.assert_close(grad_w, expected_grad_w)
 
-    def test_gradcheck(self, op, merge, save_indices):
-        x, w = make_inputs(merge, torch.float64)
+    def test_gradcheck(self, op, merge, save_indices, device):
+        x, w = make_inputs(merge, torch.float64, device)
         x = x[:2, :, :5, :6].clone().requires_grad_(True)
         w = w[..., :3].clone().requires_grad_(True)
         fn = F.dilation if op == 'dilation' else F.erosion
@@ -100,13 +101,6 @@ def test_rejects_negative_scale():
     x, w = make_inputs('sum')
     with pytest.raises(RuntimeError, match="noise_scale"):
         F.dilation(x, w, training=True, noise_scale=-0.1)
-
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-def test_rejects_cuda():
-    x, w = make_inputs('sum')
-    with pytest.raises(RuntimeError, match="only supported on CPU"):
-        F.dilation(x.cuda(), w.cuda(), training=True, noise_scale=0.1)
 
 
 @pytest.mark.parametrize('layer', [

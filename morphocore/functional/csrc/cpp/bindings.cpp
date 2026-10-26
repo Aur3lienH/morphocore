@@ -78,7 +78,7 @@ static torch::Tensor morpho_apply(torch::Tensor input, torch::Tensor weight, int
 /// @param merge Merge channel mode, a MORPHO_MERGE value
 /// @param padding Padding mode used on the borders, a MORPHO_PADDING value
 /// @param padding_value Value used by MORPHO_PADDING::CONSTANT, ignored by the other modes
-/// @param noise_scale Half width of the uniform noise added to the weight of each batch element, CPU only
+/// @param noise_scale Half width of the uniform noise added to the weight of each batch element
 /// @return Output tensor
 static torch::Tensor morpho_dilation(torch::Tensor input, torch::Tensor weight, int64_t merge, int64_t padding, double padding_value,
                                      bool save_indices, double noise_scale)
@@ -92,7 +92,7 @@ static torch::Tensor morpho_dilation(torch::Tensor input, torch::Tensor weight, 
 /// @param merge Merge channel mode, a MORPHO_MERGE value
 /// @param padding Padding mode used on the borders, a MORPHO_PADDING value
 /// @param padding_value Value used by MORPHO_PADDING::CONSTANT, ignored by the other modes
-/// @param noise_scale Half width of the uniform noise added to the weight of each batch element, CPU only
+/// @param noise_scale Half width of the uniform noise added to the weight of each batch element
 /// @return Output tensor
 static torch::Tensor morpho_erosion(torch::Tensor input, torch::Tensor weight, int64_t merge, int64_t padding, double padding_value,
                                     bool save_indices, double noise_scale)

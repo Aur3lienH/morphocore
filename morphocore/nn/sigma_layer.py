@@ -35,7 +35,7 @@ class SigmaLayer(AlphaModule):
     noise_scale : float, optional
         Half width of the uniform noise added to the structuring element during training.
         Each stage and batch element draws its own noise in [-noise_scale, noise_scale].
-        Only supported on CPU. Default is 0.0 (no noise).
+        Default is 0.0 (no noise).
     save_indices : bool, optional
         Whether to save the indices of extremum values for gradient computation.
         Default is True.

@@ -12,9 +12,15 @@
 
 // Host side helpers shared by the launchers of the tile kernels.
 
-/// @brief Build the geometry from 4D input and weight sizes.
+/// @brief Build the geometry from 4D input sizes and the weight's: 4D, or 5D with one structuring
+///        element per batch element.
 inline MorphoGeometryCUDA morpho_geometry_cuda(at::IntArrayRef input, at::IntArrayRef weight)
 {
+    const bool per_sample = weight.size() == 5;
+    if (per_sample)
+    {
+        weight = weight.slice(1);
+    }
     MorphoGeometryCUDA g;
     g.batch_size = static_cast<int>(input[0]);
     g.in_channels = static_cast<int>(input[1]);
@@ -27,6 +33,7 @@ inline MorphoGeometryCUDA morpho_geometry_cuda(at::IntArrayRef input, at::IntArr
     g.pad_h = g.kernel_height / 2;
     g.pad_w = g.kernel_width / 2;
     g.block_rows = MORPHO_BLOCK_Y;
+    g.weight_batch_stride = per_sample ? static_cast<int64_t>(g.out_channels) * g.weight_in_channels * g.taps() : 0;
     return g;
 }
 

@@ -37,7 +37,7 @@ def sigma_layer(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, channel_m
     noise_scale : float, optional
         Half width of the uniform noise added to the structuring element during training.
         Each stage and batch element draws its own noise in [-noise_scale, noise_scale].
-        Only supported on CPU. Default is 0.0 (no noise).
+        Default is 0.0 (no noise).
     training : bool, optional
         Whether the model is in training mode. Dropout and noise are only applied when True.
         Default is False.

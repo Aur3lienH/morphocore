@@ -47,7 +47,7 @@ def dilation(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum',
     noise_scale : float, optional
         Half width of the uniform noise added to the structuring element during training.
         Each batch element draws its own noise in [-noise_scale, noise_scale].
-        Only supported on CPU. Default is 0.0 (no noise).
+        Default is 0.0 (no noise).
 
     Returns
     -------

@@ -37,9 +37,10 @@ struct MorphoGeometryCUDA
     int width;
     int kernel_height;
     int kernel_width;
-    int pad_h;       // kernel_height / 2
-    int pad_w;       // kernel_width / 2
-    int block_rows;  // Rows of threads of the tile kernels' blocks, at most MORPHO_BLOCK_Y.
+    int pad_h;                    // kernel_height / 2
+    int pad_w;                    // kernel_width / 2
+    int block_rows;               // Rows of threads of the tile kernels' blocks, at most MORPHO_BLOCK_Y.
+    int64_t weight_batch_stride;  // 0 when every batch element shares the weight.
 
     __host__ __device__ int taps() const { return kernel_height * kernel_width; }
 

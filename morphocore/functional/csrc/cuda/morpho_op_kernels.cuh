@@ -366,7 +366,7 @@ __global__ void __launch_bounds__(MORPHO_THREADS, OB > 1 ? 2 : 4)
         {
             __syncthreads();  // The previous group is no longer read.
             morpho_load_window(g, input + (static_cast<int64_t>(b) * g.in_channels + c_begin) * g.plane(), h0, w0, border, window);
-            morpho_load_weights<T, OB>(weight + static_cast<int64_t>(o0) * g.weight_in_channels * g.taps(),
+            morpho_load_weights<T, OB>(weight + b * g.weight_batch_stride + static_cast<int64_t>(o0) * g.weight_in_channels * g.taps(),
                                        static_cast<int64_t>(g.weight_in_channels) * g.taps(), g.out_channels - o0, g.taps(), weights);
             __syncthreads();
             T best[OB][MORPHO_ROWS];
@@ -403,9 +403,9 @@ __global__ void __launch_bounds__(MORPHO_THREADS, OB > 1 ? 2 : 4)
         const auto stage_channel = [&](int c, int stage) {
             T* stage_window = window + stage * Stage::size(g, OB);
             morpho_copy_window_async(g, input + (static_cast<int64_t>(b) * g.in_channels + c) * g.plane(), h0, w0, border, stage_window);
-            morpho_copy_weights_interleaved_async<T, OB>(weight + (static_cast<int64_t>(o0) * g.weight_in_channels + (identity ? 0 : c)) * g.taps(),
-                                                         static_cast<int64_t>(g.weight_in_channels) * g.taps(), g.out_channels - o0, g.taps(),
-                                                         stage_window + Stage::weights_offset(g));
+            morpho_copy_weights_interleaved_async<T, OB>(
+                weight + b * g.weight_batch_stride + (static_cast<int64_t>(o0) * g.weight_in_channels + (identity ? 0 : c)) * g.taps(),
+                static_cast<int64_t>(g.weight_in_channels) * g.taps(), g.out_channels - o0, g.taps(), stage_window + Stage::weights_offset(g));
             __pipeline_commit();
         };
         __syncthreads();  // The previous group is no longer read.
@@ -454,8 +454,9 @@ __global__ void __launch_bounds__(MORPHO_THREADS, OB > 1 ? 2 : 4)
                 {
                     // MAX and MIN: the merged value is the extremum of the winning channel.
                     tap = morpho_find_tap<op>(g, input + (static_cast<int64_t>(b) * g.in_channels + c) * g.plane(),
-                                              weight + (static_cast<int64_t>(o0 + ob) * g.weight_in_channels + c) * g.taps(), h_first + r, w,
-                                              merged[ob][r], border);
+                                              weight + b * g.weight_batch_stride
+                                                  + (static_cast<int64_t>(o0 + ob) * g.weight_in_channels + c) * g.taps(),
+                                              h_first + r, w, merged[ob][r], border);
                 }
                 morpho_store_output(g, output, indices, m, b, o0 + ob, h_first + r, w, merged[ob][r], (c << 16) | tap);
             }
@@ -542,7 +543,8 @@ __global__ void __launch_bounds__(MORPHO_THREADS, OB > 1 ? 3 : 4)
             {
                 continue;
             }
-            morpho_load_weights<T, OB>(weight + (static_cast<int64_t>(o0) * g.weight_in_channels + (identity ? 0 : c)) * taps,
+            morpho_load_weights<T, OB>(weight + b * g.weight_batch_stride
+                                           + (static_cast<int64_t>(o0) * g.weight_in_channels + (identity ? 0 : c)) * taps,
                                        static_cast<int64_t>(g.weight_in_channels) * taps, valid, taps, weights);
             morpho_zero_shared(bins, OB * taps * copies);
             __syncthreads();

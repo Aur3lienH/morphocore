@@ -19,14 +19,13 @@
 /// @param padding Padding mode requested by the caller.
 /// @param padding_value Value used by MORPHO_PADDING::CONSTANT, ignored by the other modes.
 /// @param noise_scale If positive, every batch element uses its own copy of the weight with uniform
-///        noise in [-noise_scale, noise_scale] added. CPU only.
+///        noise in [-noise_scale, noise_scale] added.
 /// @return Output tensor of shape [batch, out_channels, height, width].
 template <MORPHO_OPERATION Op, MORPHO_MERGE merge, MORPHO_PADDING_KIND kind>
 torch::Tensor MorphoOperation<Op, merge, kind>::forward(torch::autograd::AutogradContext* ctx, torch::Tensor input, torch::Tensor weight,
                                                         bool save_indices, MORPHO_PADDING padding, double padding_value, double noise_scale)
 {
     TORCH_CHECK(noise_scale >= 0.0, "noise_scale must be non negative");
-    TORCH_CHECK(noise_scale == 0.0 || !input.is_cuda(), "noise_scale is only supported on CPU");
     TORCH_CHECK(padding_kind(padding) == kind, "Padding mode does not belong to the instantiated padding family");
     TensorInputDim input_dim_manager(input);
     TensorWeightDim weight_dim_manager(weight);
@@ -53,8 +52,16 @@ torch::Tensor MorphoOperation<Op, merge, kind>::forward(torch::autograd::Autogra
 
     torch::Tensor output;
     torch::Tensor max_indices;
-    // Left undefined without noise. The CPU kernels read a [batch, ...] weight as one per batch element.
+    // Left undefined without noise. The kernels read a [batch, ...] weight as one per batch element. The
+    // noise is drawn on the weight's device, from its generator.
     torch::Tensor sample_weight;
+    if (noise_scale > 0.0)
+    {
+        const torch::Tensor noise =
+            (torch::rand({batch_size, out_channels, weight_shape[1], kernel_height, kernel_width}, weight_correct_dims.options()) * 2.0 - 1.0)
+            * noise_scale;
+        sample_weight = (weight_correct_dims.unsqueeze(0) + noise).contiguous();
+    }
     const int MAX_GRID_DIM = 65535;
     bool should_save_indices = save_indices && (merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN) && out_channels * batch_size < MAX_GRID_DIM;
 
@@ -70,6 +77,7 @@ torch::Tensor MorphoOperation<Op, merge, kind>::forward(torch::autograd::Autogra
         }
         input_correct_dims = input_correct_dims.contiguous();
         weight_correct_dims = weight_correct_dims.contiguous();
+        const torch::Tensor& kernel_weight = sample_weight.defined() ? sample_weight : weight_correct_dims;
 
         // Every output element is written by the kernel, and the border is resolved in the kernel too.
         output = torch::empty({batch_size, out_channels, height, width}, input_correct_dims.options());
@@ -80,8 +88,8 @@ torch::Tensor MorphoOperation<Op, merge, kind>::forward(torch::autograd::Autogra
         }
 
         AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), "morpho_operation_forward_cuda", [&] {
-            morpho_forward_cuda<Op, scalar_t>(input_correct_dims, weight_correct_dims, output, max_indices, merge,
-                                              kind == MORPHO_PADDING_KIND::REPLICATE, morpho_fill_value<Op, scalar_t>(padding, padding_value));
+            morpho_forward_cuda<Op, scalar_t>(input_correct_dims, kernel_weight, output, max_indices, merge, kind == MORPHO_PADDING_KIND::REPLICATE,
+                                              morpho_fill_value<Op, scalar_t>(padding, padding_value));
         });
 
 #else
@@ -91,12 +99,6 @@ torch::Tensor MorphoOperation<Op, merge, kind>::forward(torch::autograd::Autogra
     else
     {
         constexpr const char* cpu_operation_name = "morpho_operation_forward_cpu";
-        if (noise_scale > 0.0)
-        {
-            const torch::Tensor noise = (torch::rand({batch_size, out_channels, weight_shape[1], kernel_height, kernel_width},
-                                                     weight_correct_dims.options()) * 2.0 - 1.0) * noise_scale;
-            sample_weight = (weight_correct_dims.unsqueeze(0) + noise).contiguous();
-        }
         const torch::Tensor& kernel_weight = sample_weight.defined() ? sample_weight : weight_correct_dims;
 
         AT_DISPATCH_FLOATING_TYPES(input_correct_dims.scalar_type(), cpu_operation_name, [&] {
@@ -156,6 +158,9 @@ torch::autograd::tensor_list MorphoOperation<Op, merge, kind>::backward(torch::a
     TORCH_CHECK(grad_output.device() == input.device(), "grad_output must be on the same device as input");
 
     TORCH_CHECK(grad_output.scalar_type() == input.scalar_type(), "grad_output must have the same dtype as input");
+    // The noisy weights chose the winning taps, so the backward must recompute with them. The weight
+    // gradient keeps the shape of the shared weight: the kernels sum it over the batch.
+    const torch::Tensor& kernel_weight = sample_weight.defined() ? sample_weight : weight;
 
     if (input.is_cuda())
     {
@@ -166,7 +171,7 @@ torch::autograd::tensor_list MorphoOperation<Op, merge, kind>::backward(torch::a
         grad_weight = torch::empty_like(weight);
 
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), "morpho_operation_backward_cuda", [&] {
-            morpho_backward_cuda<Op, scalar_t>(input, weight, indices_were_saved ? max_indices : torch::Tensor(), grad_output, grad_input,
+            morpho_backward_cuda<Op, scalar_t>(input, kernel_weight, indices_were_saved ? max_indices : torch::Tensor(), grad_output, grad_input,
                                                grad_weight, merge, kind == MORPHO_PADDING_KIND::REPLICATE,
                                                morpho_fill_value<Op, scalar_t>(padding, padding_value));
         });
@@ -182,8 +187,6 @@ torch::autograd::tensor_list MorphoOperation<Op, merge, kind>::backward(torch::a
             (Op == MORPHO_OPERATION::DILATION) ? "morpho_dilation_backward_cpu" : "morpho_erosion_backward_cpu";
 
         torch::autograd::tensor_list result;
-        // The noisy weights chose the winning taps, so the backward must recompute with them.
-        const torch::Tensor& kernel_weight = sample_weight.defined() ? sample_weight : weight;
         AT_DISPATCH_FLOATING_TYPES(input.scalar_type(), cpu_operation_name, [&] {
             const scalar_t fill = morpho_fill_value<Op, scalar_t>(padding, padding_value);
             constexpr bool merge_supports_indices = (merge == MORPHO_MERGE::MAX || merge == MORPHO_MERGE::MIN);
