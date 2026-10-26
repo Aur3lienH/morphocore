@@ -46,9 +46,8 @@ test:
 
 # Builds and pushes the builder images, only when their sources change (or from a manually run
 # pipeline): the wheel jobs then run in them directly, and the runner keeps them between jobs. The
-# first image (CUDA 12.3, gcc-toolset-12) builds up to torch 2.9. Newer headers need a newer GCC, and
-# torch >= 2.11 uses CUDA 13, so the others are the plain manylinux image (gcc-toolset-14) with the
-# CUDA of PyPI's torch installed.
+# first image (CUDA 12.3, gcc-toolset-12) builds up to torch 2.9. Newer headers need a newer GCC, so
+# the other is the plain manylinux image (gcc-toolset-14) with CUDA 12.8 installed.
 builder-images:
   stage: images
   image: docker:27
@@ -63,7 +62,7 @@ builder-images:
     matrix:
       - CUDA_VERSION: "12.3"
         DOCKERFILE: ci/docker/builder-cuda12.3.Dockerfile
-      - CUDA_VERSION: ["12.8", "13.0"]
+      - CUDA_VERSION: "12.8"
         DOCKERFILE: ci/docker/builder.Dockerfile
   script:
     # A tag only needs the image to exist: it is rebuilt by the branch pipeline of a change to it. The
@@ -86,6 +85,9 @@ builder-images:
     - if: $CI_COMMIT_TAG
 
 # One job builds the abi3 wheel of one torch version, for every Python, in the builder image of its CUDA.
+# Every wheel is built with CUDA 12, against the cu126 torch (see ci/build_linux_wheels.sh): it runs
+# with the CUDA 12 torch builds on any driver >= 525, and with the CUDA 13 ones too, whose driver
+# (>= 580) also runs CUDA 12 code.
 build:
   stage: build
   image: $BUILDER_IMAGE:cuda$CUDA_VERSION
@@ -96,10 +98,8 @@ build:
     matrix:
       - TORCH_VERSION: ["2.6", "2.7", "2.8", "2.9"]
         CUDA_VERSION: "12.3"
-      - TORCH_VERSION: "2.10"
+      - TORCH_VERSION: ["2.10", "2.11", "2.12", "2.13", "2.14"]
         CUDA_VERSION: "12.8"
-      - TORCH_VERSION: ["2.11", "2.12", "2.13", "2.14"]
-        CUDA_VERSION: "13.0"
   script:
     - bash ci/build_linux_wheels.sh "${TORCH_VERSION}" wheelhouse
   artifacts:
