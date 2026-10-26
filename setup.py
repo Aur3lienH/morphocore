@@ -79,6 +79,8 @@ if with_cuda:
         'nvcc': [
             '-O3',
             '--use_fast_math',
+            # Compile the architectures above in parallel instead of one after the other.
+            '--threads=0',
         ] + arch_flags + [
             '--maxrregcount=96',
             '-Xcompiler=-O3',

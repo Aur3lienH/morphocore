@@ -30,11 +30,6 @@ public:
     }
 };
 
-// The CUDA sources only need the declarations above. The CPU kernels use GCC vector extensions that
-// the nvcc front end cannot parse, and the dispatching wrapper is compiled in morpho_op.cpp.
-#ifndef __CUDACC__
-    #include "morpho_padding_policy.hpp"
-    #include "morpho_op_cpu_forward.hxx"
-    #include "morpho_op_cpu_backward.hxx"
-    #include "morpho_op_wrap.hxx"
-#endif
+// Only declarations here: forward and backward are defined in morpho_op_wrap.hxx, included by
+// morpho_op.cpp alone, which instantiates every class. Including the kernels here made every other
+// translation unit (bindings.cpp) compile all of them again, for the linker to drop.

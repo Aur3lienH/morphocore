@@ -1,4 +1,8 @@
 #include "morpho_op.hpp"
+#include "morpho_padding_policy.hpp"
+#include "morpho_op_cpu_forward.hxx"
+#include "morpho_op_cpu_backward.hxx"
+#include "morpho_op_wrap.hxx"
 
 // TODO: Add float16 support !
 /// @Brief Template instantiations for morphological operations (dilation and erosion) with different merge policies (ADD, MAX, MIN, AVERAGE,
