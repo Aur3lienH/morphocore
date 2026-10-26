@@ -1,6 +1,5 @@
 import torch
-from cpp_operation import smorph as smorph_cpp
-from cpp_operation import smorph_scm as smorph_scm_cpp
+from morphocore.functional._ops import ops
 from morphocore.functional.merge_enum import str_to_merge
 
 
@@ -71,6 +70,6 @@ def smorph(x: torch.Tensor, w: torch.Tensor, alpha: torch.Tensor, beta: torch.Te
     w_tilde_alpha = tanh_alpha * (term2 * w.flip(dims=(-2, -1)) + term1 * w)
 
     if beta is not None:
-        return smorph_scm_cpp(x, w_tilde_alpha, alpha, beta, str_to_merge(channel_merge_mode))
+        return ops.smorph_scm(x, w_tilde_alpha, alpha, beta)
     
-    return smorph_cpp(x, w_tilde_alpha, alpha, str_to_merge(channel_merge_mode))
+    return ops.smorph(x, w_tilde_alpha, alpha, str_to_merge(channel_merge_mode))

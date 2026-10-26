@@ -1,5 +1,5 @@
 #pragma once
-#include <torch/torch.h>
+#include <torch/all.h>
 
 /// @brief Utility struct to handle and reshape input tensors to 4D for forward pass and convert it back.
 struct TensorInputDim

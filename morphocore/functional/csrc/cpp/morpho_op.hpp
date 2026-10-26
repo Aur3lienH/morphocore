@@ -2,7 +2,7 @@
 #include <iostream>
 #include <limits>
 
-#include <torch/torch.h>
+#include <torch/all.h>
 
 #include "morpho_op_enum.hpp"
 

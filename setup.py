@@ -99,7 +99,7 @@ else:
 setup(
     ext_modules=[
         Extension(
-            name="cpp_operation",
+            name="morphocore._C",
             sources=sources,
             include_dirs=[
                 'morphocore/functional/csrc',
@@ -109,8 +109,12 @@ setup(
             define_macros=define_macros,
             extra_compile_args=extra_compile_args,
             extra_link_args=link_args,
+            # Python's stable ABI: no pybind11 (the operators go through torch's dispatcher, see
+            # bindings.cpp), so one wheel per torch version serves every Python >= 3.11.
+            py_limited_api=True,
         ),
     ],
+    options={'bdist_wheel': {'py_limited_api': 'cp311'}},
     cmdclass={
         'build_ext': BuildExtension.with_options(
             no_python_abi_suffix=True,

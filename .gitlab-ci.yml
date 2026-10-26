@@ -83,7 +83,7 @@ builder-images:
     - if: $CI_PIPELINE_SOURCE == "web"
     - if: $CI_COMMIT_TAG
 
-# One job builds every Python version of one torch version, in the builder image of its CUDA.
+# One job builds the abi3 wheel of one torch version, for every Python, in the builder image of its CUDA.
 build:
   stage: build
   image: $BUILDER_IMAGE:cuda$CUDA_VERSION

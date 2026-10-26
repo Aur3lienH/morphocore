@@ -1,7 +1,7 @@
 #include "smorph.hpp"
 #include "smorph_cpu.hpp"
 #include "../cpp/morpho_op_enum.hpp"
-#include <torch/torch.h>
+#include <torch/all.h>
 #include "reshaper.hpp"
 
 #ifdef WITH_CUDA

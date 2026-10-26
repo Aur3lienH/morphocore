@@ -1,5 +1,5 @@
 import torch
-from cpp_operation import morpho_dilation
+from morphocore.functional._ops import ops
 from morphocore.functional.merge_enum import str_to_merge, str_to_padding
 
 def dilation(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum',
@@ -82,5 +82,5 @@ def dilation(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum',
         
         w = torch.where(dropout_mask, w, torch.tensor(-float('inf'), device=w.device, dtype=w.dtype))
     
-    return morpho_dilation(x, w, str_to_merge(channel_merge_mode), str_to_padding(padding_mode),
-                           padding_value, save_indices)
+    return ops.dilation(x, w, str_to_merge(channel_merge_mode), str_to_padding(padding_mode),
+                        padding_value, save_indices)

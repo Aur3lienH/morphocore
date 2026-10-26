@@ -1,5 +1,5 @@
 #pragma once
-#include <torch/torch.h>
+#include <torch/all.h>
 
 #include "../cuda/morpho_op.cuh"
 #include "morpho_op_enum.hpp"

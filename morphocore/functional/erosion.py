@@ -1,4 +1,4 @@
-from cpp_operation import morpho_erosion
+from morphocore.functional._ops import ops
 from morphocore.functional.merge_enum import str_to_merge, str_to_padding
 import torch
 
@@ -82,5 +82,5 @@ def erosion(x: torch.Tensor, w: torch.Tensor, channel_merge_mode: str = 'sum',
         
         w = torch.where(dropout_mask, w, torch.tensor(-float('inf'), device=w.device, dtype=w.dtype))
     
-    return morpho_erosion(x, w.flip((-2, -1)), str_to_merge(channel_merge_mode),
-                          str_to_padding(padding_mode), padding_value, save_indices)
+    return ops.erosion(x, w.flip((-2, -1)), str_to_merge(channel_merge_mode),
+                       str_to_padding(padding_mode), padding_value, save_indices)

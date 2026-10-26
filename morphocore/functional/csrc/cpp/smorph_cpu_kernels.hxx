@@ -4,7 +4,7 @@
 #include <vector>
 
 #include <ATen/Parallel.h>
-#include <torch/torch.h>
+#include <torch/all.h>
 
 #include "morpho_cpu_simd.hpp"
 #include "morpho_merge_policy.hpp"

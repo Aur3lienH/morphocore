@@ -2,7 +2,7 @@
 #include <vector>
 
 #include <ATen/Parallel.h>
-#include <torch/torch.h>
+#include <torch/all.h>
 
 #include "morpho_cpu_simd.hpp"
 #include "morpho_op_cpu_kernels.hxx"

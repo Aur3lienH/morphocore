@@ -1,4 +1,22 @@
-from cpp_operation import MorphoMerge, MorphoPadding
+from enum import IntEnum
+
+
+class MorphoMerge(IntEnum):
+    """Merge channel modes, same values as MORPHO_MERGE in csrc/cpp/morpho_op_enum.hpp."""
+    MAX = 0
+    MIN = 1
+    ADD = 2
+    AVERAGE = 3
+    SMOOTH = 4
+    IDENTITY = 5
+
+
+class MorphoPadding(IntEnum):
+    """Padding modes, same values as MORPHO_PADDING in csrc/cpp/morpho_op_enum.hpp."""
+    ZERO = 0
+    GEODESIC = 1
+    CONSTANT = 2
+    REPLICATE = 3
 
 
 def str_to_merge(mode: str) -> MorphoMerge:

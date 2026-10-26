@@ -1,6 +1,6 @@
 #include "smorph_scm.hpp"
 #include "smorph_scm_cpu.hpp"
-#include <torch/torch.h>
+#include <torch/all.h>
 #include "reshaper.hpp"
 #include "../cpp/morpho_op_enum.hpp"
 

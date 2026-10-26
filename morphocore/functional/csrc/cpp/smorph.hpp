@@ -1,5 +1,5 @@
 #pragma once
-#include <torch/torch.h>
+#include <torch/all.h>
 #include "morpho_op_enum.hpp"
 
 template <MORPHO_MERGE merge>
