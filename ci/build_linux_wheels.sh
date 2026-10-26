@@ -5,9 +5,11 @@
 # Runs inside a builder image (see ci/docker): the interpreters in /opt/python, auditwheel and a
 # CUDA 12 compiler.
 #
-# The wheel is built against the cu126 build of torch from PyTorch's index, whatever CUDA PyPI's torch
-# uses: torch refuses an nvcc of another major version, and CUDA 12 code also runs on the drivers of
-# the CUDA 13 torch builds. The extension bundles its own CUDA runtime.
+# The wheel is built with CUDA 12, whose code also runs on the drivers of the CUDA 13 torch builds,
+# and bundles its own CUDA runtime. Up to torch 2.10 PyPI's torch is a CUDA 12 build: the wheel is
+# built against it, as its users run it. From 2.11 PyPI's torch is a CUDA 13 build, which torch
+# refuses to pair with a CUDA 12 nvcc: the wheel is built against the cu126 build from PyTorch's
+# index instead, which has the same C++ ABI. (Not for 2.6, whose cu126 build had another one.)
 #
 # The extension only uses Python's stable ABI (see bindings.cpp), so a single build with the oldest
 # supported Python gives an abi3 wheel for every Python >= 3.11. This is what cibuildwheel did,
@@ -21,7 +23,11 @@ OUT=$(mkdir -p "$2" && cd "$2" && pwd)
 SRC=$(cd "$(dirname "$0")/.." && pwd)
 WORK=${WORK_DIR:-$(mktemp -d)}
 PY=${PYTHON:-311}
-TORCH_INDEX=${TORCH_INDEX:-https://download.pytorch.org/whl/cu126}
+if [ "$(printf '%s\n' 2.11 "$TORCH_VERSION" | sort -V | head -1)" = 2.11 ]; then
+    TORCH_INDEX=${TORCH_INDEX:-https://download.pytorch.org/whl/cu126}
+else
+    TORCH_INDEX=${TORCH_INDEX:-https://pypi.org/simple}
+fi
 export TORCH_VERSION
 export MORPHO_WITH_CUDA=${MORPHO_WITH_CUDA:-1}
 
