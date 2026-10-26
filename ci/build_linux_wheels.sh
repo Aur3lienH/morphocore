@@ -30,6 +30,9 @@ else
 fi
 export TORCH_VERSION
 export MORPHO_WITH_CUDA=${MORPHO_WITH_CUDA:-1}
+# The GCC bounds torch checks per CUDA version are out of date in some releases: torch 2.11 refuses
+# gcc-toolset-14 with CUDA 12.8, which nvcc 12.8 supports (it rejects an unsupported GCC itself).
+export TORCH_DONT_CHECK_COMPILER_ABI=1
 
 # A C++ source takes up to 2 GB to compile (cc1plus), and every architecture nvcc compiles in
 # parallel about 1 GB (cicc), measured with torch 2.13: fully parallel the build needs about 20 GB,
